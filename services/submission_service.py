@@ -115,7 +115,7 @@ class SubmissionService:
                     submission_id=submission_id,
                     question_id=question_id,
                     answer_image_path=image_paths[0],
-                    source_page_index=source_page_index,
+                    source_page_indices=source_page_index,  # Updated parameter name
                     answer_image_paths=image_paths if len(image_paths) > 1 else None,
                     has_multiple_images=len(image_paths) > 1
                 )

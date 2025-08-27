@@ -81,7 +81,8 @@ class CanvasHelper:
         """
         # Create cache key from input data
         cache_data = {
-            'items': [(item.get('question_label'), item.get('is_correct'), item.get('source_page_index')) 
+            'items': [(item.get('question_label'), item.get('is_correct'), 
+                      item.get('source_page_indices', [item.get('source_page_index', 0)])) 
                      for item in graded_items],
             'page_index': current_page_index
         }
@@ -93,9 +94,12 @@ class CanvasHelper:
         objects = []
         current_top = 10 
 
-        items_for_this_page = [
-            item for item in graded_items if item.get('source_page_index') == current_page_index
-        ]
+        # Filter items for current page (supports multi-page items)
+        items_for_this_page = []
+        for item in graded_items:
+            source_page_indices = item.get('source_page_indices', [item.get('source_page_index', 0)])
+            if current_page_index in source_page_indices:
+                items_for_this_page.append(item)
 
         for item in items_for_this_page:
             if item['is_correct']:

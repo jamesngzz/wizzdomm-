@@ -1,6 +1,6 @@
 import os
 import json
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session, joinedload
 from contextlib import contextmanager
@@ -70,6 +70,20 @@ class DatabaseManagerV2:
                     session.execute(text("ALTER TABLE v2_submission_items ADD COLUMN has_multiple_images BOOLEAN DEFAULT 0"))
                     session.commit()
                 
+                # Migrate source_page_index from INTEGER to TEXT (JSON array support)
+                # Check current data type of source_page_index column
+                result_source_page_type = session.execute(text(
+                    "SELECT type FROM pragma_table_info('v2_submission_items') WHERE name = 'source_page_index'"
+                ))
+                source_page_type_row = result_source_page_type.fetchone()
+                
+                if source_page_type_row and source_page_type_row[0] == 'INTEGER':
+                    # Migrate existing integer values to string format
+                    session.execute(text(
+                        "UPDATE v2_submission_items SET source_page_index = CAST(source_page_index AS TEXT)"
+                    ))
+                    session.commit()
+                
                 for col_name, col_type in expected_columns.items():
                     if col_name not in columns:
                         missing_columns.append(f"ALTER TABLE v2_gradings ADD COLUMN {col_name} {col_type}")
@@ -93,6 +107,30 @@ class DatabaseManagerV2:
             raise
         finally:
             session.close()
+    
+    # Helper methods for source_page_index handling
+    @staticmethod
+    def encode_source_page_indices(indices: Union[int, List[int]]) -> str:
+        """Convert source page index(es) to string format for storage"""
+        if isinstance(indices, int):
+            return str(indices)
+        elif isinstance(indices, list):
+            return json.dumps(indices)
+        else:
+            return '0'  # fallback
+    
+    @staticmethod
+    def decode_source_page_indices(indices_str: str) -> List[int]:
+        """Convert stored string format back to list of integers"""
+        try:
+            # Try parsing as JSON array first
+            if indices_str.startswith('['):
+                return json.loads(indices_str)
+            else:
+                # Single integer stored as string
+                return [int(indices_str)]
+        except (json.JSONDecodeError, ValueError):
+            return [0]  # fallback
     
     # ============ EXAM OPERATIONS ============
     
@@ -332,7 +370,7 @@ class DatabaseManagerV2:
     # ============ SUBMISSION ITEM OPERATIONS ============
     
     def create_submission_item(self, submission_id: int, question_id: int, 
-                              answer_image_path: str, source_page_index: int, # --- THAM SỐ MỚI ---
+                              answer_image_path: str, source_page_indices: Union[int, List[int]], # --- UPDATED ---
                               answer_image_paths: List[str] = None,
                               has_multiple_images: bool = False) -> int:
         """Create a new submission item and return its ID"""
@@ -346,14 +384,14 @@ class DatabaseManagerV2:
                 existing_item.answer_image_path = answer_image_path
                 existing_item.answer_image_paths = json.dumps(answer_image_paths or [])
                 existing_item.has_multiple_images = has_multiple_images
-                existing_item.source_page_index = source_page_index
+                existing_item.source_page_index = self.encode_source_page_indices(source_page_indices)
                 session.commit()
                 return existing_item.id
             else:
                 item = SubmissionItemV2(
                     submission_id=submission_id,
                     question_id=question_id,
-                    source_page_index=source_page_index, # --- THÊM DÒNG NÀY ---
+                    source_page_index=self.encode_source_page_indices(source_page_indices), # --- UPDATED ---
                     answer_image_path=answer_image_path,
                     answer_image_paths=json.dumps(answer_image_paths or []),
                     has_multiple_images=has_multiple_images

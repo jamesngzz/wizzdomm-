@@ -2,6 +2,7 @@
 import streamlit as st
 import os
 import sys
+import json
 from PIL import Image
 from streamlit_drawable_canvas import st_canvas
 
@@ -61,6 +62,7 @@ def show_results_page():
         if not image_paths:
             st.warning("No answer sheet images found for this submission.")
         else:
+            # Initialize page_index at module scope to avoid scoping issues
             page_index = 0
             if len(image_paths) > 1:
                 page_selection = st.selectbox(
@@ -92,37 +94,49 @@ def show_results_page():
                 fill_color="rgba(255, 165, 0, 0.3)",
                 stroke_width=0,
                 background_image=bg_image,
-                initial_drawing=st.session_state.get(f"canvas_json_{submission_id}_{page_index}", initial_drawing),
+                initial_drawing=initial_drawing,
                 drawing_mode="transform",
                 height=display_height,
                 width=display_width,
                 key=f"canvas_{submission_id}_{page_index}"
             )
-            
-            # Only update session state if canvas data actually changed
-            if canvas_result.json_data is not None:
-                current_key = f"canvas_json_{submission_id}_{page_index}"
-                if current_key not in st.session_state or st.session_state[current_key] != canvas_result.json_data:
-                    st.session_state[current_key] = canvas_result.json_data
 
+    # Ensure page_index is defined for grading summary (fallback if no images)
+    if 'page_index' not in locals():
+        page_index = 0
+        
     with col2:
         st.subheader("🎯 Grading Summary")
         graded_items = results_data['graded_items']
         
-        # Filter items for current page only
-        items_for_current_page = [
-            item for item in graded_items 
-            if item.get('source_page_index') == page_index
-        ]
+        # Filter items for current page (supports multi-page items)
+        items_for_current_page = []
+        for item in graded_items:
+            source_page_indices = item.get('source_page_indices', [item.get('source_page_index', 0)])
+            if page_index in source_page_indices:
+                items_for_current_page.append(item)
         
         if not graded_items:
             st.info("This submission has not been graded yet.")
         elif not items_for_current_page:
-            st.info(f"No graded questions found for page {page_index + 1}.")
+            # Fallback: show all items with page indicators when no items found for current page
+            st.info(f"No graded questions found for page {page_index + 1}. Showing all questions with page indicators:")
+            items_to_show = graded_items
         else:
-            for item in items_for_current_page:
+            items_to_show = items_for_current_page
+            
+        if 'items_to_show' in locals():
+            for item in items_to_show:
                 with st.container(border=True):
-                    st.markdown(f"**{item['question_label']}**")
+                    # Show page indicators for multi-page items
+                    source_page_indices = item.get('source_page_indices', [item.get('source_page_index', 0)])
+                    if len(source_page_indices) > 1:
+                        pages_str = ', '.join([str(p + 1) for p in source_page_indices])
+                        st.markdown(f"**{item['question_label']}** (spans pages: {pages_str})")
+                    elif 'items_for_current_page' in locals() and not items_for_current_page:
+                        st.markdown(f"**{item['question_label']}** (from page {source_page_indices[0] + 1})")
+                    else:
+                        st.markdown(f"**{item['question_label']}**")
                     if item['is_correct']:
                         st.success("**Result: CORRECT** ✅")
                     else:

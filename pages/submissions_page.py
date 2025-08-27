@@ -206,22 +206,15 @@ def display_answer_cropping_ui(progress_data):
         st.error("This submission has no answer sheet images to crop from.")
         return
 
-    # Use session state to persist page selection
-    page_key = f"answer_page_{question_id}"
-    if page_key not in st.session_state:
-        st.session_state[page_key] = 0
-    
-    page_index = st.number_input(
+    # Simplified page selection - let Streamlit handle widget state
+    selected_page = st.number_input(
         f"Select page (1 to {len(image_paths)})",
         min_value=1, max_value=len(image_paths), 
-        value=st.session_state[page_key] + 1, 
+        value=1,  # Default to page 1
         key=f"page_selector_{question_id}"
-    ) - 1
+    )
+    page_index = selected_page - 1  # Convert to 0-based indexing
     
-    # Update session state when page changes
-    if st.session_state[page_key] != page_index:
-        st.session_state[page_key] = page_index
-        st.rerun()
     
     img = Image.open(image_paths[page_index])
     cropped_img = st_cropper(img, realtime_update=True, box_color="#FF4B4B", return_type="image", key=f"cropper_{question_id}_{page_index}")

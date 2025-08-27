@@ -60,7 +60,8 @@ class SubmissionItemV2(Base):
     question_id = Column(Integer, ForeignKey("v2_questions.id"), nullable=False)
     
     # --- CỘT MỚI ĐƯỢC THÊM VÀO ---
-    source_page_index = Column(Integer, nullable=False, default=0)
+    # Can store either single integer (backward compatibility) or JSON array for multi-page answers
+    source_page_index = Column(String, nullable=False, default='0')
 
     answer_image_path = Column(String(512), nullable=False)   
     answer_image_paths = Column(String, nullable=True)

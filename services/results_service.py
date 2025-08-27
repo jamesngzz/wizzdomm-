@@ -41,8 +41,12 @@ class ResultsService:
                     except (json.JSONDecodeError, TypeError):
                         pass
 
+                # Decode source page indices (supports both single int and array)
+                source_page_indices = db_manager.decode_source_page_indices(item.source_page_index)
+                
                 graded_items_data.append({
-                    "source_page_index": item.source_page_index,
+                    "source_page_indices": source_page_indices,  # Now an array
+                    "source_page_index": source_page_indices[0] if source_page_indices else 0,  # Backward compatibility
                     "question_label": format_question_label(question.order_index, question.part_label),
                     "is_correct": grading.is_correct,
                     "confidence": grading.confidence,
