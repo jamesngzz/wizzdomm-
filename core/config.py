@@ -27,9 +27,10 @@ IMAGES_DIR = os.path.join(STATIC_DIR, "images")
 EXAMS_DIR = os.path.join(IMAGES_DIR, "exams")
 QUESTIONS_DIR = os.path.join(IMAGES_DIR, "questions")
 ANSWERS_DIR = os.path.join(IMAGES_DIR, "answers")
+SUBMISSIONS_DIR = os.path.join(IMAGES_DIR, "submissions")
 
 # Create directories if they don't exist
-for directory in ["data", STATIC_DIR, IMAGES_DIR, EXAMS_DIR, QUESTIONS_DIR, ANSWERS_DIR]:
+for directory in ["data", STATIC_DIR, IMAGES_DIR, EXAMS_DIR, QUESTIONS_DIR, ANSWERS_DIR, SUBMISSIONS_DIR]:
     os.makedirs(directory, exist_ok=True)
 
 # ==================== IMAGE SETTINGS ====================

@@ -2,7 +2,7 @@ import os
 import json
 from typing import List, Optional, Dict, Any
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, joinedload
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -110,9 +110,15 @@ class DatabaseManagerV2:
             return exam.id
     
     def get_exam_by_id(self, exam_id: int) -> Optional[ExamV2]:
-        """Get exam by ID"""
+        """Get exam by ID with its questions eagerly loaded."""
         with self.get_session() as session:
-            return session.query(ExamV2).filter(ExamV2.id == exam_id).first()
+            # SỬ DỤNG EAGER LOADING ĐỂ TẢI LUÔN CÁC CÂU HỎI
+            return (
+                session.query(ExamV2)
+                .options(joinedload(ExamV2.questions)) # Tải các câu hỏi liên quan
+                .filter(ExamV2.id == exam_id)
+                .first()
+            )
     
     def list_exams(self) -> List[Dict[str, Any]]:
         """List all exams with basic info"""
@@ -149,6 +155,22 @@ class DatabaseManagerV2:
             session.commit()
             return question.id
     
+    def update_question_images(self, question_id: int, new_image_paths: List[str]) -> bool:
+        """Update question with additional images"""
+        with self.get_session() as session:
+            question = session.query(QuestionV2).filter(QuestionV2.id == question_id).first()
+            if not question:
+                return False
+            
+            existing_paths = json.loads(question.question_image_paths or '[]')
+            all_paths = existing_paths + new_image_paths
+            
+            question.question_image_paths = json.dumps(all_paths)
+            question.has_multiple_images = len(all_paths) > 1
+            
+            session.commit()
+            return True
+    
     def get_questions_by_exam(self, exam_id: int) -> List[QuestionV2]:
         """Get all questions for an exam, ordered by order_index and part_label"""
         with self.get_session() as session:
@@ -156,6 +178,15 @@ class DatabaseManagerV2:
                    .filter(QuestionV2.exam_id == exam_id)
                    .order_by(QuestionV2.order_index, QuestionV2.part_label)
                    .all())
+    
+    def find_question_by_label(self, exam_id: int, order_index: int, part_label: str) -> Optional[QuestionV2]:
+        """Find existing question by exam_id, order_index and part_label"""
+        with self.get_session() as session:
+            return (session.query(QuestionV2)
+                   .filter(QuestionV2.exam_id == exam_id)
+                   .filter(QuestionV2.order_index == order_index)
+                   .filter(QuestionV2.part_label == part_label)
+                   .first())
     
     def get_question_by_id(self, question_id: int) -> Optional[QuestionV2]:
         """Get question by ID"""
@@ -246,9 +277,27 @@ class DatabaseManagerV2:
             return submission.id
     
     def get_submission_by_id(self, submission_id: int) -> Optional[SubmissionV2]:
-        """Get submission by ID"""
+        """
+        Get submission by ID with ALL related data eagerly loaded using explicit joins
+        to prevent any DetachedInstanceError. This is the definitive method.
+        """
         with self.get_session() as session:
-            return session.query(SubmissionV2).filter(SubmissionV2.id == submission_id).first()
+            return (
+                session.query(SubmissionV2)
+                .filter(SubmissionV2.id == submission_id)
+                .options(
+                    # Tải lồng nhau sâu nhất: Submission -> Exam -> Questions của Exam đó
+                    joinedload(SubmissionV2.exam).joinedload(ExamV2.questions),
+                    
+                    # Tải lồng nhau sâu nhất: Submission -> Items -> Question và Grading của Item đó
+                    joinedload(SubmissionV2.items)
+                    .joinedload(SubmissionItemV2.question),
+
+                    joinedload(SubmissionV2.items)
+                    .joinedload(SubmissionItemV2.grading)
+                )
+                .first()
+            )
     
     def list_submissions_by_exam(self, exam_id: int) -> List[Dict[str, Any]]:
         """List all submissions for an exam"""
@@ -270,33 +319,41 @@ class DatabaseManagerV2:
     def get_all_submissions(self) -> List[SubmissionV2]:
         """Get all submissions"""
         with self.get_session() as session:
-            return session.query(SubmissionV2).order_by(SubmissionV2.id.desc()).all()
+            return (
+                session.query(SubmissionV2)
+                .options(
+                    joinedload(SubmissionV2.exam),
+                    joinedload(SubmissionV2.items).joinedload(SubmissionItemV2.question)
+                )
+                .order_by(SubmissionV2.id.desc())
+                .all()
+            )
     
     # ============ SUBMISSION ITEM OPERATIONS ============
     
     def create_submission_item(self, submission_id: int, question_id: int, 
-                              answer_image_path: str, answer_image_paths: List[str] = None,
+                              answer_image_path: str, source_page_index: int, # --- THAM SỐ MỚI ---
+                              answer_image_paths: List[str] = None,
                               has_multiple_images: bool = False) -> int:
         """Create a new submission item and return its ID"""
         with self.get_session() as session:
-            # Check if mapping already exists
             existing_item = (session.query(SubmissionItemV2)
                            .filter(SubmissionItemV2.submission_id == submission_id)
                            .filter(SubmissionItemV2.question_id == question_id)
                            .first())
             
             if existing_item:
-                # Update existing item instead of creating duplicate
                 existing_item.answer_image_path = answer_image_path
                 existing_item.answer_image_paths = json.dumps(answer_image_paths or [])
                 existing_item.has_multiple_images = has_multiple_images
+                existing_item.source_page_index = source_page_index
                 session.commit()
                 return existing_item.id
             else:
-                # Create new item
                 item = SubmissionItemV2(
                     submission_id=submission_id,
                     question_id=question_id,
+                    source_page_index=source_page_index, # --- THÊM DÒNG NÀY ---
                     answer_image_path=answer_image_path,
                     answer_image_paths=json.dumps(answer_image_paths or []),
                     has_multiple_images=has_multiple_images
@@ -305,10 +362,40 @@ class DatabaseManagerV2:
                 session.commit()
                 return item.id
     
-    def get_submission_items(self, submission_id: int) -> List[SubmissionItemV2]:
-        """Get all submission items for a submission"""
+    def update_submission_item_images(self, submission_id: int, question_id: int, new_image_paths: List[str]) -> bool:
+        """Add new images to existing submission item"""
+        with self.get_session() as session:
+            item = (session.query(SubmissionItemV2)
+                   .filter(SubmissionItemV2.submission_id == submission_id)
+                   .filter(SubmissionItemV2.question_id == question_id)
+                   .first())
+            
+            if not item:
+                return False
+            
+            existing_paths = json.loads(item.answer_image_paths or '[]')
+            all_paths = existing_paths + new_image_paths
+            
+            item.answer_image_paths = json.dumps(all_paths)
+            item.has_multiple_images = len(all_paths) > 1
+            
+            session.commit()
+            return True
+    
+    def find_submission_item(self, submission_id: int, question_id: int) -> Optional[SubmissionItemV2]:
+        """Find existing submission item by submission_id and question_id"""
         with self.get_session() as session:
             return (session.query(SubmissionItemV2)
+                   .filter(SubmissionItemV2.submission_id == submission_id)
+                   .filter(SubmissionItemV2.question_id == question_id)
+                   .first())
+    
+    def get_submission_items(self, submission_id: int) -> List[SubmissionItemV2]:
+        """Get all submission items for a submission with grading and question relationships"""
+        with self.get_session() as session:
+            return (session.query(SubmissionItemV2)
+                   .options(joinedload(SubmissionItemV2.grading))
+                   .options(joinedload(SubmissionItemV2.question))
                    .filter(SubmissionItemV2.submission_id == submission_id)
                    .all())
     
@@ -346,12 +433,19 @@ class DatabaseManagerV2:
             session.commit()
             return grading.id
     
-    def get_grading_by_item_id(self, submission_item_id: int) -> Optional[GradingV2]:
-        """Get grading result by submission item ID"""
+    def get_gradings_by_submission(self, submission_id: int) -> list[GradingV2]:
+        """Get all grading results for a submission, with related items eagerly loaded."""
         with self.get_session() as session:
-            return (session.query(GradingV2)
-                   .filter(GradingV2.submission_item_id == submission_item_id)
-                   .first())
+            return (
+                session.query(GradingV2)
+                .join(SubmissionItemV2) # Cần join để có thể filter theo submission_id
+                .options(
+                    # Tải lồng nhau: Grading -> SubmissionItem -> Question
+                    joinedload(GradingV2.submission_item).joinedload(SubmissionItemV2.question)
+                )
+                .filter(SubmissionItemV2.submission_id == submission_id)
+                .all()
+            )
     
     def get_submission_grading_summary(self, submission_id: int) -> Dict[str, Any]:
         """Get grading summary for a submission"""
@@ -400,20 +494,37 @@ class DatabaseManagerV2:
     def create_grading(self, submission_item_id: int, question_id: int, is_correct: bool,
                        confidence: float = None, error_description: str = None, 
                        error_phrases: List[str] = None, partial_credit: bool = False) -> int:
-        """Create new grading result with AI data"""
+        """Create new grading result with AI data (or update if exists)"""
         with self.get_session() as session:
-            grading = GradingV2(
-                submission_item_id=submission_item_id,
-                question_id=question_id,
-                is_correct=is_correct,
-                confidence=confidence,
-                error_description=error_description,
-                error_phrases=json.dumps(error_phrases or []),
-                partial_credit=partial_credit
-            )
-            session.add(grading)
-            session.commit()
-            return grading.id
+            # Check if grading already exists for this submission_item_id
+            existing_grading = (session.query(GradingV2)
+                              .filter(GradingV2.submission_item_id == submission_item_id)
+                              .first())
+            
+            if existing_grading:
+                # Update existing grading
+                existing_grading.is_correct = is_correct
+                existing_grading.confidence = confidence
+                existing_grading.error_description = error_description
+                existing_grading.error_phrases = json.dumps(error_phrases or [], ensure_ascii=False)
+                existing_grading.partial_credit = partial_credit
+                existing_grading.graded_at = datetime.now().replace(microsecond=0)
+                session.commit()
+                return existing_grading.id
+            else:
+                # Create new grading
+                grading = GradingV2(
+                    submission_item_id=submission_item_id,
+                    question_id=question_id,
+                    is_correct=is_correct,
+                    confidence=confidence,
+                    error_description=error_description,
+                    error_phrases=json.dumps(error_phrases or [], ensure_ascii=False),
+                    partial_credit=partial_credit
+                )
+                session.add(grading)
+                session.commit()
+                return grading.id
     
     def get_gradings_by_submission(self, submission_id: int) -> list[GradingV2]:
         """Get all grading results for a submission"""
@@ -440,7 +551,7 @@ class DatabaseManagerV2:
             if error_description is not None:
                 grading.error_description = error_description
             if error_phrases is not None:
-                grading.error_phrases = json.dumps(error_phrases)
+                grading.error_phrases = json.dumps(error_phrases, ensure_ascii=False)
             if partial_credit is not None:
                 grading.partial_credit = partial_credit
             if teacher_notes is not None:

@@ -2,4 +2,10 @@
 *.md
 *.log
 *.db
+*.png
+*.pyc
+
 **/static/**
+
+.streamlit
+.claude

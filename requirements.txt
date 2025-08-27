@@ -4,3 +4,4 @@ streamlit-cropper==0.2.1
 pillow==10.1.0
 python-dotenv==1.0.0
 openai==1.55.3
+streamlit-drawable-canvas==0.9.3
