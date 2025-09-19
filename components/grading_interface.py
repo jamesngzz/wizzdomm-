@@ -154,9 +154,6 @@ class GradingInterfaceComponent:
                     else:
                         st.error("❌ Failed to save changes.")
                 
-                if grade_callback:
-                    if st.button(f"🔄 Re-grade this question", key=f"regrade_{submission_item.id}"):
-                        grade_callback(submission_item, question)
             else:
                 st.info("This question has not been graded yet.")
                 if grade_callback:

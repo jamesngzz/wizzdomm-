@@ -84,11 +84,26 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
 ```json
 {
   "is_correct": true/false,
-  "confidence": float, (từ 0 đến 1) #Mức độ tự tin của Model khi chấm bài
-  "error_description": "Giải thích chi tiết về các lỗi", #Nếu đúng và không có lỗi nào cả thì trả về NULL
-  "error_phrases":"Lỗi sai học sinh cụ thể" (tối đa 15 từ một ý, tối đa 3 ý) Ví dụ: ["Mâu thuẫn logic: khẳng định (x-3)^2020+(2y+6)^2022>0 rồi lại suy ra =0", "Đặt điều kiện cho phương trình chứa căn sai, phải là ... chứ không là ...",...]
-  "partial_credit": true/false #Trong quá trình làm bài tồn tại những bước đúng (Ví dụ logic giải bài gồm 4 bước và đúng hai bước đầu)
+  "critical_errors": [
+    {
+      "description": "Mô tả lỗi nghiêm trọng ảnh hưởng đến logic chính",
+      "phrases": ["Phrase ngắn gọn mô tả lỗi"] #Tối đa 2 lỗi
+    }
+  ], #Lỗi sai chí mạng làm ảnh hưởng nhiều đến mạch logic làm bài. VD: Sai phương pháp, sai công thức chính
+  "part_errors": [
+    {
+      "description": "Mô tả lỗi nhỏ hoặc không chắc chắn do OCR",
+      "phrases": ["Phrase ngắn gọn mô tả lỗi"] #Tối đa 2 lỗi
+    }
+  ], #Lỗi nhỏ, không đáng kể hoặc không chắc chắn do chữ viết không rõ ràng. VD: Sai tính toán nhỏ, viết mơ hồ
+  "partial_credit": true/false #Trong quá trình làm bài tồn tại những bước đúng
 }
+
+**CHỈ DẪN PHÂN LOẠI LỖI:**
+- **CRITICAL_ERRORS (Màu đỏ):** Lỗi làm sai lệch hoàn toàn logic bài làm, ảnh hưởng đến kết quả cuối
+- **PART_ERRORS (Màu vàng):** Lỗi nhỏ, không ảnh hưởng logic chính, hoặc do không chắc chắn khi đọc chữ viết
+- Nếu không có lỗi nào trong loại đó thì để array rỗng []
+- Mỗi error có description (chi tiết) và phrases (ngắn gọn để hiển thị)
 """
 
     def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash-exp"):
@@ -175,7 +190,7 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
                 ],
                 config=types.GenerateContentConfig(
                     system_instruction=self.VISION_GRADING_PROMPT,
-                    max_output_tokens=5000,
+                    temperature=0,
                     response_mime_type="application/json"
                 )
             )
@@ -264,10 +279,10 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response: {e}")
-            return {"is_correct": False, "confidence": 0.0, "error_description": "Failed to parse AI response", "error_phrases": [], "partial_credit": False}
+            return {"is_correct": False, "critical_errors": [{"description": "Failed to parse AI response", "phrases": []}], "part_errors": [], "partial_credit": False}
         except Exception as e:
             logger.error(f"Async API request failed: {e}")
-            return {"is_correct": False, "confidence": 0.0, "error_description": f"API error: {str(e)}", "error_phrases": [], "partial_credit": False}
+            return {"is_correct": False, "critical_errors": [{"description": f"API error: {str(e)}", "phrases": []}], "part_errors": [], "partial_credit": False}
 
     def grade_batch(self, items: List[Dict]) -> List[Dict[str, Any]]:
         """Override base method to use async processing with concurrency limit"""

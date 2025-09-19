@@ -83,7 +83,6 @@ class GradingService:
                 if existing_grading:
                     previous_grading = {
                         'is_correct': existing_grading.is_correct,
-                        'confidence': existing_grading.confidence,
                         'error_description': existing_grading.error_description,
                         'error_phrases': existing_grading.error_phrases,
                         'partial_credit': existing_grading.partial_credit
@@ -105,13 +104,27 @@ class GradingService:
             
             logger.info(f"AI grading for item {item.id} completed in {processing_time:.2f}s.")
 
+            # Handle both new and legacy error formats
+            critical_errors = ai_result.get('critical_errors', [])
+            part_errors = ai_result.get('part_errors', [])
+
+            # Legacy support: if old format is present, convert to new format
+            if ai_result.get('error_description') and not critical_errors and not part_errors:
+                # Convert legacy error_description to critical_errors for backward compatibility
+                legacy_error = {
+                    "description": ai_result.get('error_description', ''),
+                    "phrases": ai_result.get('error_phrases', [])
+                }
+                critical_errors = [legacy_error] if legacy_error["description"] else []
+
             grading_id = db_manager.create_grading(
                 submission_item_id=item.id,
                 question_id=question.id,
                 is_correct=ai_result.get('is_correct', False),
-                confidence=ai_result.get('confidence'),
-                error_description=ai_result.get('error_description'),
-                error_phrases=ai_result.get('error_phrases', []),
+                error_description=ai_result.get('error_description'),  # Keep for backward compatibility
+                error_phrases=ai_result.get('error_phrases', []),  # Keep for backward compatibility
+                critical_errors=critical_errors,
+                part_errors=part_errors,
                 partial_credit=ai_result.get('partial_credit', False),
                 clarify_notes=clarify
             )
@@ -157,13 +170,26 @@ class GradingService:
 
             graded_count = 0
             for item_data, result_data in zip(items_to_grade, ai_results):
+                # Handle both new and legacy error formats
+                critical_errors = result_data.get('critical_errors', [])
+                part_errors = result_data.get('part_errors', [])
+
+                # Legacy support: if old format is present, convert to new format
+                if result_data.get('error_description') and not critical_errors and not part_errors:
+                    legacy_error = {
+                        "description": result_data.get('error_description', ''),
+                        "phrases": result_data.get('error_phrases', [])
+                    }
+                    critical_errors = [legacy_error] if legacy_error["description"] else []
+
                 db_manager.create_grading(
                     submission_item_id=item_data['submission_item_id'],
                     question_id=item_data['question_id'],
                     is_correct=result_data.get('is_correct', False),
-                    confidence=result_data.get('confidence'),
-                    error_description=result_data.get('error_description'),
-                    error_phrases=result_data.get('error_phrases', []),
+                    error_description=result_data.get('error_description'),  # Keep for backward compatibility
+                    error_phrases=result_data.get('error_phrases', []),  # Keep for backward compatibility
+                    critical_errors=critical_errors,
+                    part_errors=part_errors,
                     partial_credit=result_data.get('partial_credit', False)
                 )
                 graded_count += 1

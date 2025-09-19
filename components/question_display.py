@@ -111,63 +111,59 @@ class QuestionDisplayComponent:
         """Renders a detailed summary of a grading result."""
         st.markdown("**🎯 AI Grading Result**")
         
-        # Display main result and confidence
-        col1, col2 = st.columns(2)
-        with col1:
-            if grading_result.is_correct:
-                st.success("**Result: CORRECT** ✅")
-            else:
-                st.error("**Result: INCORRECT** ❌")
-        
-        with col2:
-            if grading_result.confidence:
-                st.metric("AI Confidence", f"{grading_result.confidence:.1%}")
+        # Display main result
+        if grading_result.is_correct:
+            st.success("**Result: CORRECT** ✅")
+        else:
+            st.error("**Result: INCORRECT** ❌")
         
         if grading_result.partial_credit:
             st.info("ℹ️ Partial credit was suggested for this answer.")
 
-        # Display detailed error analysis
-        if show_details and grading_result.error_description and grading_result.error_description != "No errors found":
-            with st.container(border=True):
-                st.markdown("**🔍 Error Analysis:**")
-                
-                if editable:
-                    # Editable mode
-                    new_analysis = st.text_area(
-                        "Edit Error Analysis:",
-                        value=grading_result.error_description,
-                        key=f"analysis_{grading_result.id}",
-                        height=100
-                    )
-                    
-                    # Handle error phrases
-                    current_phrases = []
-                    if hasattr(grading_result, 'error_phrases') and grading_result.error_phrases:
-                        try:
-                            current_phrases = json.loads(grading_result.error_phrases)
-                        except (json.JSONDecodeError, TypeError):
-                            current_phrases = []
-                    
-                    st.markdown("**Key Error Points:**")
-                    phrases_text = st.text_area(
-                        "Edit Key Error Points (one per line):",
-                        value="\n".join(current_phrases) if current_phrases else "",
-                        key=f"phrases_{grading_result.id}",
-                        height=80
-                    )
-                    
-                    # Save button
-                    if st.button("💾 Save Changes", key=f"save_{grading_result.id}", type="primary"):
-                        return {
-                            'save_requested': True,
-                            'grading_id': grading_result.id,
-                            'new_analysis': new_analysis,
-                            'new_phrases': [p.strip() for p in phrases_text.split('\n') if p.strip()]
-                        }
-                else:
-                    # Display mode
+        # Display new categorized error analysis
+        if show_details:
+            # Check for new error format first
+            critical_errors = []
+            part_errors = []
+
+            if hasattr(grading_result, 'critical_errors') and grading_result.critical_errors:
+                try:
+                    critical_errors = json.loads(grading_result.critical_errors)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if hasattr(grading_result, 'part_errors') and grading_result.part_errors:
+                try:
+                    part_errors = json.loads(grading_result.part_errors)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Display critical errors (red)
+            if critical_errors:
+                with st.container(border=True):
+                    st.markdown("**🔴 Critical Errors (Lỗi chí mạng):**")
+                    for error in critical_errors:
+                        st.error(f"**{error.get('description', '')}**")
+                        if error.get('phrases'):
+                            for phrase in error['phrases']:
+                                st.markdown(f"- {phrase}")
+
+            # Display part errors (yellow/warning)
+            if part_errors:
+                with st.container(border=True):
+                    st.markdown("**🟡 Part Errors (Lỗi nhỏ/Không chắc chắn):**")
+                    for error in part_errors:
+                        st.warning(f"**{error.get('description', '')}**")
+                        if error.get('phrases'):
+                            for phrase in error['phrases']:
+                                st.markdown(f"- {phrase}")
+
+            # Fallback to legacy error display if new format not available
+            if not critical_errors and not part_errors and grading_result.error_description and grading_result.error_description != "No errors found":
+                with st.container(border=True):
+                    st.markdown("**🔍 Error Analysis (Legacy):**")
                     st.warning(grading_result.error_description)
-                    
+
                     if hasattr(grading_result, 'error_phrases') and grading_result.error_phrases:
                         try:
                             phrases = json.loads(grading_result.error_phrases)
@@ -176,6 +172,6 @@ class QuestionDisplayComponent:
                                 for phrase in phrases:
                                     st.markdown(f"- {phrase}")
                         except (json.JSONDecodeError, TypeError):
-                            pass # Ignore if error_phrases is not valid JSON
+                            pass
         
         return None  # No save requested

@@ -80,8 +80,10 @@ class GradingV2(Base):
     is_correct = Column(Boolean, nullable=False)
     confidence = Column(Float, nullable=True)
 
-    error_description = Column(String, nullable=True)
-    error_phrases = Column(String, nullable=True)
+    error_description = Column(String, nullable=True)  # Legacy field for backward compatibility
+    error_phrases = Column(String, nullable=True)  # Legacy field for backward compatibility
+    critical_errors = Column(String, nullable=True)  # JSON array of critical errors
+    part_errors = Column(String, nullable=True)  # JSON array of part errors
     partial_credit = Column(Boolean, default=False)
 
     teacher_notes = Column(String, nullable=True)

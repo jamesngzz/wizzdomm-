@@ -31,7 +31,9 @@ class DatabaseManagerV2:
                     'question_id': 'INTEGER',
                     'confidence': 'FLOAT',
                     'partial_credit': 'BOOLEAN DEFAULT 0',
-                    'clarify_notes': 'TEXT'
+                    'clarify_notes': 'TEXT',
+                    'critical_errors': 'TEXT',
+                    'part_errors': 'TEXT'
                 }
                 
                 # Check for topic column in exams table
@@ -531,9 +533,9 @@ class DatabaseManagerV2:
             }
     
     def create_grading(self, submission_item_id: int, question_id: int, is_correct: bool,
-                       confidence: float = None, error_description: str = None,
-                       error_phrases: List[str] = None, partial_credit: bool = False,
-                       clarify_notes: str = None) -> int:
+                       error_description: str = None, error_phrases: List[str] = None,
+                       partial_credit: bool = False, clarify_notes: str = None,
+                       critical_errors: List[Dict] = None, part_errors: List[Dict] = None) -> int:
         """Create new grading result with AI data (or update if exists)"""
         with self.get_session() as session:
             # Check if grading already exists for this submission_item_id
@@ -544,9 +546,10 @@ class DatabaseManagerV2:
             if existing_grading:
                 # Update existing grading
                 existing_grading.is_correct = is_correct
-                existing_grading.confidence = confidence
                 existing_grading.error_description = error_description
                 existing_grading.error_phrases = json.dumps(error_phrases or [], ensure_ascii=False)
+                existing_grading.critical_errors = json.dumps(critical_errors or [], ensure_ascii=False)
+                existing_grading.part_errors = json.dumps(part_errors or [], ensure_ascii=False)
                 existing_grading.partial_credit = partial_credit
                 existing_grading.clarify_notes = clarify_notes
                 existing_grading.graded_at = datetime.now().replace(microsecond=0)
@@ -558,9 +561,10 @@ class DatabaseManagerV2:
                     submission_item_id=submission_item_id,
                     question_id=question_id,
                     is_correct=is_correct,
-                    confidence=confidence,
                     error_description=error_description,
                     error_phrases=json.dumps(error_phrases or [], ensure_ascii=False),
+                    critical_errors=json.dumps(critical_errors or [], ensure_ascii=False),
+                    part_errors=json.dumps(part_errors or [], ensure_ascii=False),
                     partial_credit=partial_credit,
                     clarify_notes=clarify_notes
                 )
