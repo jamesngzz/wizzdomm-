@@ -55,7 +55,7 @@ class GradingService:
         # Final check to ensure all returned paths actually exist on the filesystem
         return [p for p in unique_paths if os.path.exists(p)]
 
-    def grade_single_question(self, submission_item_id: int) -> Tuple[bool, str, Optional[int]]:
+    def grade_single_question(self, submission_item_id: int, clarify: str = None) -> Tuple[bool, str, Optional[int]]:
         """
         Grades a single submission item using the configured Vision AI model.
         """
@@ -76,15 +76,31 @@ class GradingService:
             if not answer_paths:
                 return False, "Could not find the student's answer image(s) on disk.", None
 
+            # Get previous grading if clarify is provided (for re-grading)
+            previous_grading = None
+            if clarify:
+                existing_grading = getattr(item, 'grading', None)
+                if existing_grading:
+                    previous_grading = {
+                        'is_correct': existing_grading.is_correct,
+                        'confidence': existing_grading.confidence,
+                        'error_description': existing_grading.error_description,
+                        'error_phrases': existing_grading.error_phrases,
+                        'partial_credit': existing_grading.partial_credit
+                    }
+
             # Log input images being sent to LLM
             logger.info(f"Calling LLM for submission_item {item.id}:")
             logger.info(f"  Question images ({len(question_paths)}): {[os.path.basename(p) for p in question_paths]}")
             logger.info(f"  Answer images ({len(answer_paths)}): {[os.path.basename(p) for p in answer_paths]}")
             logger.info(f"  Question paths: {question_paths}")
             logger.info(f"  Answer paths: {answer_paths}")
+            if clarify:
+                logger.info(f"  Clarify text: {clarify}")
+                logger.info(f"  Previous grading: {previous_grading}")
 
             start_time = datetime.now()
-            ai_result = self.ai_model.grade_image_pair(question_paths, answer_paths)
+            ai_result = self.ai_model.grade_image_pair(question_paths, answer_paths, clarify=clarify, previous_grading=previous_grading)
             processing_time = (datetime.now() - start_time).total_seconds()
             
             logger.info(f"AI grading for item {item.id} completed in {processing_time:.2f}s.")
@@ -96,7 +112,8 @@ class GradingService:
                 confidence=ai_result.get('confidence'),
                 error_description=ai_result.get('error_description'),
                 error_phrases=ai_result.get('error_phrases', []),
-                partial_credit=ai_result.get('partial_credit', False)
+                partial_credit=ai_result.get('partial_credit', False),
+                clarify_notes=clarify
             )
 
             if grading_id:

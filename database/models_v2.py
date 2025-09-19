@@ -76,16 +76,17 @@ class GradingV2(Base):
     id = Column(Integer, primary_key=True)
     submission_item_id = Column(Integer, ForeignKey("v2_submission_items.id"), nullable=False, unique=True)
     question_id = Column(Integer, ForeignKey("v2_questions.id"), nullable=False)
-    
+
     is_correct = Column(Boolean, nullable=False)
     confidence = Column(Float, nullable=True)
-    
+
     error_description = Column(String, nullable=True)
     error_phrases = Column(String, nullable=True)
     partial_credit = Column(Boolean, default=False)
-    
-    teacher_notes = Column(String, nullable=True)   
-    
+
+    teacher_notes = Column(String, nullable=True)
+    clarify_notes = Column(String, nullable=True)  # Teacher clarification for re-grading
+
     graded_at = Column(DateTime, default=datetime_now_seconds)
 
     submission_item = relationship("SubmissionItemV2", back_populates="grading")

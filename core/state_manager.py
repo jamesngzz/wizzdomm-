@@ -36,6 +36,8 @@ class AppState:
             "last_saved_question": None,
             "last_submission_created": None,
             "question_to_delete_from_grading": None,
+            "regrade_item_id": None,
+            "regrade_clarify_text": "",
         }
 
     # With the new __init__, we no longer need to override __getattr__ and __setattr__

@@ -10,11 +10,14 @@ APP_ICON = "📚"
 LAYOUT = "wide"
 
 # ==================== MODEL CONFIGURATION ====================
-# Vision grading model - using GPT-5 Mini for image pairs (no temperature needed)
-VISION_GRADING_MODEL = "gpt-5-mini"
+# Vision grading model configuration - now defaults to Gemini
+AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")  # "openai" or "gemini"
+VISION_GRADING_MODEL = "gpt-5-mini"  # OpenAI model
+GEMINI_MODEL = "gemini-2.0-flash-exp"  # Gemini model
 
 # ==================== API CONFIGURATION ====================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ==================== DATABASE CONFIGURATION ====================
 # SQLite local file path from environment or default

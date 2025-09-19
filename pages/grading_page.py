@@ -104,10 +104,44 @@ def display_grading_dashboard(submission_data):
             delete_callback=handle_delete_question
         )
 
+        # Add clarify re-grading workflow for graded items
+        if existing_gradings.get(item.id):
+            if st.button("🔄 Re-grade with clarification", key=f"regrade_btn_{item.id}"):
+                app_state.regrade_item_id = item.id
+                app_state.regrade_clarify_text = app_state.regrade_clarify_text or ""
+
+            if app_state.regrade_item_id == item.id:
+                st.info("Vui lòng nhập Clarify bắt buộc cho lần chấm lại.")
+                clarify = st.text_area("Clarify cho lần chấm lại (bắt buộc)",
+                                     key=f"clarify_text_{item.id}",
+                                     value=app_state.regrade_clarify_text,
+                                     help="Ví dụ: Ở bước cuối là y^6, không phải y^8")
+                c1, c2 = st.columns([1,1])
+                with c1:
+                    if st.button("Xác nhận Re-grade", key=f"confirm_regrade_{item.id}"):
+                        if not clarify or not clarify.strip():
+                            st.error("Clarify là bắt buộc.")
+                        else:
+                            app_state.regrade_clarify_text = clarify.strip()
+                            handle_grade_single_with_clarify(item, item.question, app_state.regrade_clarify_text)
+                            app_state.regrade_item_id = None
+                            app_state.regrade_clarify_text = ""
+                with c2:
+                    if st.button("Hủy", key=f"cancel_regrade_{item.id}"):
+                        app_state.regrade_item_id = None
+                        app_state.regrade_clarify_text = ""
+
 def handle_grade_single(submission_item, question):
     """Callback to grade a single question."""
     with st.spinner(f"🤖 Grading Question..."):
         success, msg, _ = grading_service.grade_single_question(submission_item.id)
+        st.toast(msg, icon="✅" if success else "❌")
+    st.rerun()
+
+def handle_grade_single_with_clarify(submission_item, question, clarify: str):
+    """Callback to re-grade a single question with teacher clarification."""
+    with st.spinner(f"🤖 Re-grading with clarification..."):
+        success, msg, _ = grading_service.grade_single_question(submission_item.id, clarify=clarify)
         st.toast(msg, icon="✅" if success else "❌")
     st.rerun()
 

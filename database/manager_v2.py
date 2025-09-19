@@ -30,7 +30,8 @@ class DatabaseManagerV2:
                 expected_columns = {
                     'question_id': 'INTEGER',
                     'confidence': 'FLOAT',
-                    'partial_credit': 'BOOLEAN DEFAULT 0'
+                    'partial_credit': 'BOOLEAN DEFAULT 0',
+                    'clarify_notes': 'TEXT'
                 }
                 
                 # Check for topic column in exams table
@@ -530,8 +531,9 @@ class DatabaseManagerV2:
             }
     
     def create_grading(self, submission_item_id: int, question_id: int, is_correct: bool,
-                       confidence: float = None, error_description: str = None, 
-                       error_phrases: List[str] = None, partial_credit: bool = False) -> int:
+                       confidence: float = None, error_description: str = None,
+                       error_phrases: List[str] = None, partial_credit: bool = False,
+                       clarify_notes: str = None) -> int:
         """Create new grading result with AI data (or update if exists)"""
         with self.get_session() as session:
             # Check if grading already exists for this submission_item_id
@@ -546,6 +548,7 @@ class DatabaseManagerV2:
                 existing_grading.error_description = error_description
                 existing_grading.error_phrases = json.dumps(error_phrases or [], ensure_ascii=False)
                 existing_grading.partial_credit = partial_credit
+                existing_grading.clarify_notes = clarify_notes
                 existing_grading.graded_at = datetime.now().replace(microsecond=0)
                 session.commit()
                 return existing_grading.id
@@ -558,7 +561,8 @@ class DatabaseManagerV2:
                     confidence=confidence,
                     error_description=error_description,
                     error_phrases=json.dumps(error_phrases or [], ensure_ascii=False),
-                    partial_credit=partial_credit
+                    partial_credit=partial_credit,
+                    clarify_notes=clarify_notes
                 )
                 session.add(grading)
                 session.commit()
@@ -572,10 +576,10 @@ class DatabaseManagerV2:
                    .filter(SubmissionItemV2.submission_id == submission_id)
                    .all())
     
-    def update_grading(self, grading_id: int, is_correct: bool = None, 
+    def update_grading(self, grading_id: int, is_correct: bool = None,
                       confidence: float = None, error_description: str = None,
-                      error_phrases: List[str] = None, partial_credit: bool = None, 
-                      teacher_notes: str = None) -> bool:
+                      error_phrases: List[str] = None, partial_credit: bool = None,
+                      teacher_notes: str = None, clarify_notes: str = None) -> bool:
         """Update existing grading result"""
         with self.get_session() as session:
             grading = session.query(GradingV2).filter(GradingV2.id == grading_id).first()
@@ -594,6 +598,8 @@ class DatabaseManagerV2:
                 grading.partial_credit = partial_credit
             if teacher_notes is not None:
                 grading.teacher_notes = teacher_notes
+            if clarify_notes is not None:
+                grading.clarify_notes = clarify_notes
             
             grading.graded_at = datetime.now().replace(microsecond=0)
             

@@ -6,7 +6,8 @@ import asyncio
 from pathlib import Path
 from typing import List, Dict, Any
 
-from openai import AsyncOpenAI, OpenAI
+from google import genai
+from google.genai import types
 
 from .base_model import BaseGradingModel
 from core.llm_logger import log_llm_call, SERVICE_VISION_GRADING
@@ -14,11 +15,11 @@ from core.llm_logger import log_llm_call, SERVICE_VISION_GRADING
 # Setup logging
 logger = logging.getLogger(__name__)
 
-class OpenAIModel(BaseGradingModel):
+class GeminiModel(BaseGradingModel):
     """
-    An implementation of the BaseGradingModel using OpenAI's GPT Vision models.
+    An implementation of the BaseGradingModel using Google's Gemini Vision models.
     """
-    
+
     # The detailed prompt is now part of this model-specific implementation.
     VISION_GRADING_PROMPT = """
 Một giáo viên Toán Việt Nam tài giỏi với 20 năm kinh nghiệm, sở trường của bạn là phân tích sâu sắc logic giải bài của học sinh và đưa ra những nhận xét chính xác, công tâm.
@@ -48,7 +49,21 @@ Một giáo viên Toán Việt Nam tài giỏi với 20 năm kinh nghiệm, sở
         *   **Ưu tiên Ý Định Đúng (Principle of Charity):** Nếu có nhiều cách đọc khả thi (ví dụ: 6 hay 8), tôi sẽ ưu tiên cách đọc nào giúp cho lập luận của học sinh có *khả năng đúng* hoặc *ít sai sót hơn* trong bối cảnh chung của bài giải. Mục tiêu của tôi là hiểu ý học sinh và đánh giá tư duy, không phải tìm lỗi dựa trên sự mơ hồ của chữ viết.
         *   **Mở Rộng Phạm Vi Phân Tích:** Đôi khi cần xem xét cả một đoạn văn bản, một phép tính lớn hơn hoặc thậm chí toàn bộ phương trình để xác định chính xác ý đồ của học sinh, thay vì chỉ tập trung vào một ký tự đơn lẻ.
 
-*   **2.3. Tìm "Lỗi Gốc" (Root Cause Analysis):**
+*   **2.3. Phân Tích Phần Gạch Xóa:**
+    *   **Bước đầu tiên:** Xác định TẤT CẢ các phần có dấu hiệu gạch xóa (đường kẻ ngang, zigzag, tô đen, v.v.)
+    *   **PHÂN LOẠI GẠCH XÓA - THEN CHỐT:**
+        *   **LOẠI 1 - GẠCH XÓA DO SAI/SỬA ĐỔI:** Học sinh viết sai rồi gạch để sửa lại
+            - VD: viết "2x + 3 = 8" rồi gạch xóa toàn bộ để viết lại "3x + 5 = 11"
+            → **HOÀN TOÀN BỎ QUA** những phần này, KHÔNG tính vào bài làm
+        *   **LOẠI 2 - GẠCH XÓA DO TRIỆT TIÊU TOÁN HỌC:** Học sinh cố ý gạch để triệt tiêu các số hạng đối nhau
+            - VD: "+2x - 2x" thì gạch cả hai "2x" để cho thấy chúng triệt tiêu nhau
+            - VD: phương trình "x + 3 - 3 = 5" gạch "+3" và "-3"
+            → **PHẢI TÍNH VÀO** quá trình làm bài, đây là bước toán học HOÀN TOÀN hợp lệ
+    *   **XỬ LÝ CUỐI CÙNG:**
+        *   Loại 1: Bỏ qua hoàn toàn, như thể không tồn tại
+        *   Loại 2: Coi như bước rút gọn/đơn giản hóa hợp lệ
+
+*   **2.4. Tìm "Lỗi Gốc" (Root Cause Analysis):**
     *   Nếu có nhiều lỗi sai, tôi sẽ tập trung vào **lỗi sai đầu tiên và cơ bản nhất** đã gây ra chuỗi sai lầm sau đó. Ví dụ, nếu học sinh tính sai biệt thức Delta ngay từ đầu, dẫn đến toàn bộ phần tìm nghiệm phía sau đều sai, thì "lỗi gốc" là "Tính sai biệt thức Delta". Tôi sẽ chỉ ra lỗi gốc này để học sinh hiểu vấn đề cốt lõi cần khắc phục.
 
 ### **TIÊU CHÍ ĐÁNH GIÁ**
@@ -56,6 +71,11 @@ Một giáo viên Toán Việt Nam tài giỏi với 20 năm kinh nghiệm, sở
 🔄 ĐIỂM MỘT PHẦN: Phương pháp đúng hoặc đáp án đúng nhưng sai sót nhỏ trong tính toán, hoặc các lỗi không đáng kể.
 ❌ SAI: Phương pháp sai hoặc đáp án sai hoặc đúng một cách "may mắn" nhưng có lỗ hổng logic nghiệm trọng.
 ❌ KHÔNG LÀM BÀI: Bỏ trống hoặc bài làm không đọc được.
+
+**LƯU Ý QUAN TRỌNG VỀ GẠCH XÓA:**
+- **Gạch xóa triệt tiêu** (như +x -x, hoặc 6/3 gạch cùng số) là dấu hiệu của tư duy toán học TÍCH CỰC và cần được ĐÁNH GIÁ CAO
+- **Gạch xóa sửa sai** thì hoàn toàn bỏ qua, chỉ xét phần sau khi sửa
+- Khi nghi ngờ, ưu tiên coi là triệt tiêu nếu có logic toán học hợp lý
 
 ### **YÊU CẦU OUTPUT (BẮT BUỘC)**
 
@@ -71,13 +91,12 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
 }
 """
 
-    def __init__(self, api_key: str, model_name: str = "gpt-4o"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash-exp"):
         if not api_key:
-            raise ValueError("OpenAI API key is required.")
-        self.client = OpenAI(api_key=api_key)
-        self.async_client = AsyncOpenAI(api_key=api_key)
+            raise ValueError("Gemini API key is required.")
+        self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
-        logger.info(f"OpenAIModel initialized with model: {self.model_name}")
+        logger.info(f"GeminiModel initialized with model: {self.model_name}")
 
     def _encode_image(self, image_path: str) -> str:
         """Encode image to base64."""
@@ -96,9 +115,9 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
     def grade_image_pair(self, question_image_paths: List[str], answer_image_paths: List[str],
                         clarify: str = None, previous_grading: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Grades a student's answer by analyzing question and answer images using OpenAI's API.
+        Grades a student's answer by analyzing question and answer images using Gemini's API.
         """
-        logger.info(f"Grading with OpenAI: {len(question_image_paths)} question images vs {len(answer_image_paths)} answer images.")
+        logger.info(f"Grading with Gemini: {len(question_image_paths)} question images vs {len(answer_image_paths)} answer images.")
         logger.info(f"Question image paths: {question_image_paths}")
         logger.info(f"Answer image paths: {answer_image_paths}")
 
@@ -114,59 +133,72 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
                 initial_text += f"Lỗi='{previous_grading.get('error_description', 'N/A')}'\n"
                 initial_text += f"Dựa vào clarification này, hãy chấm lại câu hỏi với sự chú ý đặc biệt đến phần thầy cô đã chỉ ra."
 
-            message_content = [{"type": "text", "text": initial_text}]
+            # Prepare parts list - text should be Part.from_text()
+            parts = [types.Part.from_text(text=initial_text)]
 
             # Add question images
             for img_path in question_image_paths:
                 if not os.path.exists(img_path):
                     raise FileNotFoundError(f"Question image not found: {img_path}")
-                b64_image = self._encode_image(img_path)
-                mime_type = self._get_image_mime_type(img_path)
-                message_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{mime_type};base64,{b64_image}", "detail": "high"}
-                })
+
+                # Read image as bytes for Gemini
+                with open(img_path, "rb") as f:
+                    image_data = f.read()
+
+                parts.append(types.Part.from_bytes(
+                    data=image_data,
+                    mime_type=self._get_image_mime_type(img_path)
+                ))
 
             # Add answer images
             for img_path in answer_image_paths:
                 if not os.path.exists(img_path):
                     raise FileNotFoundError(f"Answer image not found: {img_path}")
-                b64_image = self._encode_image(img_path)
-                mime_type = self._get_image_mime_type(img_path)
-                message_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{mime_type};base64,{b64_image}", "detail": "high"}
-                })
 
-            messages = [
-                {"role": "system", "content": self.VISION_GRADING_PROMPT},
-                {"role": "user", "content": message_content}
-            ]
+                # Read image as bytes for Gemini
+                with open(img_path, "rb") as f:
+                    image_data = f.read()
 
-            response = self.client.chat.completions.create(
+                parts.append(types.Part.from_bytes(
+                    data=image_data,
+                    mime_type=self._get_image_mime_type(img_path)
+                ))
+
+            # Make API call to Gemini
+            response = self.client.models.generate_content(
                 model=self.model_name,
-                messages=messages,
-                max_completion_tokens=5000,
-                response_format={"type": "json_object"}
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=parts
+                    )
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=self.VISION_GRADING_PROMPT,
+                    max_output_tokens=5000,
+                    response_mime_type="application/json"
+                )
             )
 
-            log_llm_call(response, self.model_name, SERVICE_VISION_GRADING)
-            
-            result_json = json.loads(response.choices[0].message.content)
+            # Log the response for debugging
+            logger.info(f"Gemini API response received for grading")
+
+            # Parse JSON response
+            result_json = json.loads(response.text)
             return result_json
 
         except json.JSONDecodeError as e:
-            logger.error(f"OpenAI response JSON parsing failed: {e}")
+            logger.error(f"Gemini response JSON parsing failed: {e}")
             raise
         except Exception as e:
-            logger.error(f"OpenAI grading failed: {e}")
+            logger.error(f"Gemini grading failed: {e}")
             raise
 
     async def _grade_image_pair_async(self, question_image_paths: List[str], answer_image_paths: List[str],
                                      clarify: str = None, previous_grading: Dict[str, Any] = None) -> Dict[str, Any]:
         """Async version of grade_image_pair for batch processing"""
-        logger.info(f"Async grading with OpenAI: {len(question_image_paths)} question images vs {len(answer_image_paths)} answer images.")
-        
+        logger.info(f"Async grading with Gemini: {len(question_image_paths)} question images vs {len(answer_image_paths)} answer images.")
+
         try:
             # Build the initial message
             initial_text = "Hãy chấm bài tự luận toán của học sinh."
@@ -179,45 +211,55 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
                 initial_text += f"Lỗi='{previous_grading.get('error_description', 'N/A')}'\n"
                 initial_text += f"Dựa vào clarification này, hãy chấm lại câu hỏi với sự chú ý đặc biệt đến phần thầy cô đã chỉ ra."
 
-            message_content = [{"type": "text", "text": initial_text}]
+            # Prepare parts list - text should be Part.from_text()
+            parts = [types.Part.from_text(text=initial_text)]
 
             # Add question images
             for img_path in question_image_paths:
                 if not os.path.exists(img_path):
                     raise FileNotFoundError(f"Question image not found: {img_path}")
-                b64_image = self._encode_image(img_path)
-                mime_type = self._get_image_mime_type(img_path)
-                message_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{mime_type};base64,{b64_image}", "detail": "high"}
-                })
+
+                # Read image as bytes for Gemini
+                with open(img_path, "rb") as f:
+                    image_data = f.read()
+
+                parts.append(types.Part.from_bytes(
+                    data=image_data,
+                    mime_type=self._get_image_mime_type(img_path)
+                ))
 
             # Add answer images
             for img_path in answer_image_paths:
                 if not os.path.exists(img_path):
                     raise FileNotFoundError(f"Answer image not found: {img_path}")
-                b64_image = self._encode_image(img_path)
-                mime_type = self._get_image_mime_type(img_path)
-                message_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{mime_type};base64,{b64_image}", "detail": "high"}
-                })
 
-            messages = [
-                {"role": "system", "content": self.VISION_GRADING_PROMPT},
-                {"role": "user", "content": message_content}
-            ]
+                # Read image as bytes for Gemini
+                with open(img_path, "rb") as f:
+                    image_data = f.read()
 
-            response = await self.async_client.chat.completions.create(
+                parts.append(types.Part.from_bytes(
+                    data=image_data,
+                    mime_type=self._get_image_mime_type(img_path)
+                ))
+
+            # Note: Gemini client might not have async support yet, so we'll use sync in async wrapper
+            # This can be updated when Gemini adds proper async support
+            response = self.client.models.generate_content(
                 model=self.model_name,
-                messages=messages,
-                max_completion_tokens=5000,
-                response_format={"type": "json_object"}
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=parts
+                    )
+                ],
+                config=types.GenerateContentConfig(
+                    system_instruction=self.VISION_GRADING_PROMPT,
+                    max_output_tokens=5000,
+                    response_mime_type="application/json"
+                )
             )
 
-            log_llm_call(response, self.model_name, SERVICE_VISION_GRADING)
-            
-            result_json = json.loads(response.choices[0].message.content)
+            result_json = json.loads(response.text)
             return result_json
 
         except json.JSONDecodeError as e:
@@ -231,14 +273,14 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
         """Override base method to use async processing with concurrency limit"""
         if not items:
             return []
-            
+
         logger.info(f"Starting async batch grading for {len(items)} items with max 10 concurrent requests")
         return asyncio.run(self._grade_batch_async(items))
-    
+
     async def _grade_batch_async(self, items: List[Dict]) -> List[Dict[str, Any]]:
         """Async batch processing with concurrency limit"""
         semaphore = asyncio.Semaphore(10)  # Max 10 concurrent requests
-        
+
         async def process_item(item):
             async with semaphore:
                 return await self._grade_image_pair_async(
@@ -247,9 +289,9 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
                     clarify=item.get('clarify'),
                     previous_grading=item.get('previous_grading')
                 )
-        
+
         tasks = [process_item(item) for item in items]
         results = await asyncio.gather(*tasks)
-        
+
         logger.info(f"Async batch grading completed for {len(items)} items")
         return results
