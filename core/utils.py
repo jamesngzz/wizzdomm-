@@ -5,7 +5,7 @@ from PIL import Image
 from typing import List, Tuple
 import streamlit as st
 
-from .config import QUESTIONS_DIR, ANSWERS_DIR, SUPPORTED_IMAGE_FORMATS
+from .config import QUESTIONS_DIR, ANSWERS_DIR, SUPPORTED_IMAGE_FORMATS, MAX_IMAGE_SIZE_MB
 
 def save_uploaded_image(uploaded_file, save_dir: str, prefix: str = "") -> str:
     """Save uploaded file to specified directory and return the file path"""
@@ -50,16 +50,16 @@ def validate_image_file(uploaded_file) -> Tuple[bool, str]:
     if file_extension not in SUPPORTED_IMAGE_FORMATS:
         return False, f"Unsupported format. Supported: {', '.join(SUPPORTED_IMAGE_FORMATS)}"
     
-    # Check file size (10MB limit)
-    if uploaded_file.size > 10 * 1024 * 1024:  # 10MB
-        return False, "File too large. Maximum size: 10MB"
+    # Enforce max image size from config
+    if uploaded_file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024:
+        return False, f"File too large. Maximum size: {MAX_IMAGE_SIZE_MB}MB"
     
     return True, "Valid"
 
 def display_image_with_info(image_path: str, caption: str = ""):
     """Display image with file information"""
     if os.path.exists(image_path):
-        st.image(image_path, caption=caption, use_column_width=True)
+        st.image(image_path, caption=caption, use_container_width=True)
         
         # Show file info
         file_size = os.path.getsize(image_path)

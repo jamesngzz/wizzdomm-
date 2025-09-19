@@ -36,7 +36,7 @@ for directory in ["data", STATIC_DIR, IMAGES_DIR, EXAMS_DIR, QUESTIONS_DIR, ANSW
 # ==================== IMAGE SETTINGS ====================
 # Supported image formats
 SUPPORTED_IMAGE_FORMATS = ["png", "jpg", "jpeg"]
-MAX_IMAGE_SIZE_MB = 10
+MAX_IMAGE_SIZE_MB = 50
 
 # ==================== CROPPING SETTINGS ====================
 CROP_BOX_COLOR = "#0066CC"  # Blue color for crop box

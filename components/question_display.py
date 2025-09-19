@@ -18,7 +18,7 @@ class QuestionDisplayComponent:
     def _render_image(image_path: str, caption: str):
         """Internal helper to render a single image safely."""
         if os.path.exists(image_path):
-            st.image(image_path, caption=caption, use_column_width=True)
+            st.image(image_path, caption=caption, use_container_width=True)
         else:
             st.error(f"❌ Image not found: {os.path.basename(image_path)}")
 

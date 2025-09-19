@@ -9,3 +9,7 @@
 
 .streamlit
 .claude
+
+test_gemini_ocr.py
+
+**/test_data/**
