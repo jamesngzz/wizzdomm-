@@ -38,6 +38,13 @@ class QuestionV2(Base):
     order_index = Column(Integer, nullable=False)
     part_label = Column(String(32))
 
+    # Solution fields for AI-generated answers
+    solution_answer = Column(String, nullable=True)  # Final answer from AI
+    solution_steps = Column(String, nullable=True)   # JSON array of solution steps
+    solution_points = Column(String, nullable=True)  # JSON array of points per step
+    solution_verified = Column(Boolean, default=False)  # Teacher approval status
+    solution_generated_at = Column(DateTime, nullable=True)  # When AI solution was generated
+
     exam = relationship("ExamV2", back_populates="questions")
     submission_items = relationship("SubmissionItemV2", back_populates="question", cascade="all, delete-orphan")
     gradings = relationship("GradingV2", back_populates="question", cascade="all, delete-orphan")

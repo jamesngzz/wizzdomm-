@@ -88,6 +88,21 @@ class GradingService:
                         'partial_credit': existing_grading.partial_credit
                     }
 
+            # Get solution for reference (description and content only)
+            solution = None
+            if question.solution_answer and question.solution_steps:
+                try:
+                    steps = json.loads(question.solution_steps)
+                    if steps:
+                        solution = {
+                            'steps': [{
+                                'description': step.get('description', f'Bước {i+1}'),
+                                'content': step.get('content', '')
+                            } for i, step in enumerate(steps)]
+                        }
+                except (json.JSONDecodeError, TypeError):
+                    pass  # Skip invalid solution data
+
             # Log input images being sent to LLM
             logger.info(f"Calling LLM for submission_item {item.id}:")
             logger.info(f"  Question images ({len(question_paths)}): {[os.path.basename(p) for p in question_paths]}")
@@ -99,7 +114,7 @@ class GradingService:
                 logger.info(f"  Previous grading: {previous_grading}")
 
             start_time = datetime.now()
-            ai_result = self.ai_model.grade_image_pair(question_paths, answer_paths, clarify=clarify, previous_grading=previous_grading)
+            ai_result = self.ai_model.grade_image_pair(question_paths, answer_paths, clarify=clarify, previous_grading=previous_grading, solution=solution)
             processing_time = (datetime.now() - start_time).total_seconds()
             
             logger.info(f"AI grading for item {item.id} completed in {processing_time:.2f}s.")

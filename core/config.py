@@ -10,10 +10,12 @@ APP_ICON = "📚"
 LAYOUT = "wide"
 
 # ==================== MODEL CONFIGURATION ====================
-# Vision grading model configuration - now defaults to Gemini
-AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini")  # "openai" or "gemini"
-VISION_GRADING_MODEL = "gpt-5-mini"  # OpenAI model
-GEMINI_MODEL = "gemini-2.0-flash-exp"  # Gemini model
+# AI Provider - only use Gemini for grading
+AI_PROVIDER = "gemini"  # Only Gemini supported for grading
+
+# Model names (avoid hardcoding)
+OPENAI_SOLVER_MODEL = "gpt-5-mini"  # OpenAI model for question solving
+GEMINI_GRADING_MODEL = "gemini-2.5-flash"  # Gemini model for grading
 
 # ==================== API CONFIGURATION ====================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

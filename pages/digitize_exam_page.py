@@ -14,8 +14,11 @@ sys.path.insert(0, project_root)
 from core.state_manager import app_state
 from services.exam_service import ExamService
 from services.question_service import QuestionService
+from services.question_solver_service import question_solver_service
 from components.shared_components import render_selection_box, render_confirmation_dialog
+from components.solution_review import SolutionReviewComponent
 from core.utils import format_question_label
+import asyncio
 
 def show_digitize_exam_page():
     """Page for digitizing exams, using shared components for selection and deletion."""
@@ -123,7 +126,7 @@ def display_cropping_interface():
     with col2:
         st.markdown("**📝 Question Details:**")
         if cropped_img:
-            st.image(cropped_img, caption="Cropped Preview", use_container_width=True)
+            st.image(cropped_img, caption="Cropped Preview", width="stretch")
         
         with st.form("question_form"):
             question_label = st.text_input("Question Label*", placeholder="e.g., 1a, 2b, 3")
@@ -146,3 +149,175 @@ def display_cropping_interface():
                             st.rerun()
                         else:
                             st.error(message)
+
+    # --- Solution Generation Section ---
+    st.divider()
+    st.subheader("🧮 AI Question Solving")
+
+    # Get current questions for this exam
+    success, _, exam_questions = QuestionService.get_questions_by_exam(app_state.current_exam_id)
+
+    if not exam_questions:
+        st.info("📝 Chưa có câu hỏi nào được tạo. Hãy crop các câu hỏi trước.")
+        return
+
+    # Filter questions that don't have solutions yet
+    questions_without_solutions = [q for q in exam_questions if not q.solution_answer]
+    questions_with_solutions = [q for q in exam_questions if q.solution_answer]
+
+    # Summary
+    total_questions = len(exam_questions)
+    solved_questions = len(questions_with_solutions)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📊 Tổng câu hỏi", total_questions)
+    with col2:
+        st.metric("✅ Đã giải", solved_questions)
+    with col3:
+        st.metric("⏳ Chưa giải", len(questions_without_solutions))
+
+    # Progress bar
+    if total_questions > 0:
+        progress = solved_questions / total_questions
+        st.progress(progress)
+        st.caption(f"Tiến độ giải toán: {solved_questions}/{total_questions} ({progress:.1%})")
+
+    # Batch solution generation
+    if questions_without_solutions:
+        st.markdown("### 🚀 Tạo Lời Giải Hàng Loạt")
+
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            st.info(f"🎯 Có {len(questions_without_solutions)} câu hỏi chưa được giải")
+
+        with col2:
+            if st.button("🧮 Giải Tất Cả", type="primary", key="solve_all_questions"):
+                question_ids = [q.id for q in questions_without_solutions]
+
+                with st.spinner(f"Đang giải {len(question_ids)} câu hỏi bằng GPT-5 Mini..."):
+                    # Run async batch solving
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        success, message, results = loop.run_until_complete(
+                            question_solver_service.solve_questions_batch(question_ids)
+                        )
+                        loop.close()
+
+                        if success:
+                            st.success(f"✅ {message}")
+                            st.balloons()
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {message}")
+
+                            # Show detailed results if available
+                            if results and results.get('details'):
+                                with st.expander("Chi tiết lỗi"):
+                                    for detail in results['details']:
+                                        status = detail['status']
+                                        if status == 'success':
+                                            st.success(f"Câu {detail['question_id']}: {detail['message']}")
+                                        else:
+                                            st.error(f"Câu {detail['question_id']}: {detail['message']}")
+
+                    except Exception as e:
+                        st.error(f"❌ Lỗi trong quá trình giải: {str(e)}")
+
+    # Solution review section
+    if questions_with_solutions:
+        st.markdown("### 📋 Xem và Duyệt Lời Giải")
+
+        # Show solution summary
+        SolutionReviewComponent.render_solution_summary(questions_with_solutions)
+
+        # Batch actions for solutions
+        verified_solutions = [q for q in questions_with_solutions if q.solution_verified]
+        unverified_solutions = [q for q in questions_with_solutions if not q.solution_verified]
+
+        if unverified_solutions:
+            st.markdown("#### ⚡ Thao Tác Hàng Loạt")
+            unverified_ids = [q.id for q in unverified_solutions]
+            SolutionReviewComponent.render_batch_solution_actions(unverified_ids)
+
+        # Individual solution review
+        st.markdown("#### 🔍 Xem Chi Tiết Lời Giải")
+
+        selected_question = st.selectbox(
+            "Chọn câu hỏi để xem lời giải:",
+            options=questions_with_solutions,
+            format_func=lambda q: f"Câu {q.order_index}{q.part_label or ''} - {'✅ Đã duyệt' if q.solution_verified else '⏳ Chờ duyệt'}",
+            key="solution_review_selector"
+        )
+
+        if selected_question:
+            question_id = selected_question.id
+
+            # Get full solution data
+            success, message, solution_data = question_solver_service.get_question_solution(question_id)
+
+            if success and solution_data:
+                # Tabs for different views
+                tab1, tab2, tab3 = st.tabs(["👀 Xem Lời Giải", "✏️ Chỉnh Sửa", "🎯 Phê Duyệt"])
+
+                with tab1:
+                    SolutionReviewComponent.render_solution_display(solution_data, question_id)
+
+                with tab2:
+                    updated_solution = SolutionReviewComponent.render_solution_editor(solution_data, question_id)
+                    if updated_solution:
+                        st.rerun()
+
+                with tab3:
+                    new_verification = SolutionReviewComponent.render_solution_approval(
+                        question_id, solution_data.get('verified', False)
+                    )
+                    if new_verification is not None:
+                        time.sleep(1)
+                        st.rerun()
+            else:
+                st.error(f"❌ Không thể tải lời giải: {message}")
+
+    # Individual question solving
+    if questions_without_solutions:
+        st.markdown("### 🎯 Giải Từng Câu Hỏi")
+
+        selected_unsolved = st.selectbox(
+            "Chọn câu hỏi để giải:",
+            options=questions_without_solutions,
+            format_func=lambda q: f"Câu {q.order_index}{q.part_label or ''}",
+            key="individual_solve_selector"
+        )
+
+        if selected_unsolved:
+            question_id = selected_unsolved.id
+
+            if st.button(f"🧮 Giải Câu {selected_unsolved.order_index}{selected_unsolved.part_label or ''}", key=f"solve_individual_{question_id}"):
+                with st.spinner("Đang giải câu hỏi bằng GPT-5 Mini..."):
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        success, message, solution_data = loop.run_until_complete(
+                            question_solver_service.solve_single_question(question_id)
+                        )
+                        loop.close()
+
+                        if success:
+                            st.success(f"✅ {message}")
+
+                            # Show the generated solution immediately
+                            if solution_data:
+                                st.markdown("#### 📄 Lời Giải Vừa Tạo:")
+                                SolutionReviewComponent.render_solution_display(solution_data, question_id)
+
+                            st.balloons()
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {message}")
+
+                    except Exception as e:
+                        st.error(f"❌ Lỗi trong quá trình giải: {str(e)}")

@@ -40,7 +40,7 @@ class ImageCropperComponent:
 
         if cropped_img:
             st.markdown("**Cropped Preview:**")
-            st.image(cropped_img, use_container_width=True)
+            st.image(cropped_img, width="stretch")
             st.caption(f"Crop dimensions: {cropped_img.width} x {cropped_img.height} pixels")
         
         return result

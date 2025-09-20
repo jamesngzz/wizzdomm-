@@ -102,7 +102,7 @@ def show_submissions_page():
                 with cols[i % 4]:
                     try:
                         image = Image.open(uploaded_file)
-                        st.image(image, caption=uploaded_file.name, use_container_width=True)
+                        st.image(image, caption=uploaded_file.name, width="stretch")
                     except Exception as e:
                         st.error(f"Failed to preview {uploaded_file.name}: {e}")
 

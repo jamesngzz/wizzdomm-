@@ -9,7 +9,7 @@ class BaseGradingModel(ABC):
     
     @abstractmethod
     def grade_image_pair(self, question_image_paths: List[str], answer_image_paths: List[str],
-                        clarify: str = None, previous_grading: Dict[str, Any] = None) -> Dict[str, Any]:
+                        clarify: str = None, previous_grading: Dict[str, Any] = None, solution: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Grades a pair of question and answer images.
 
@@ -18,6 +18,7 @@ class BaseGradingModel(ABC):
             answer_image_paths: A list of file paths to the student's answer images.
             clarify: Optional teacher clarification for re-grading (e.g., "Ở bước cuối là y^6, không phải y^8")
             previous_grading: Optional previous grading result for context when re-grading
+            solution: Optional solution reference with description and content only
 
         Returns:
             A dictionary containing the grading result, conforming to a standardized format.
@@ -52,7 +53,8 @@ class BaseGradingModel(ABC):
                 question_image_paths=item['question_image_paths'],
                 answer_image_paths=item['answer_image_paths'],
                 clarify=item.get('clarify'),
-                previous_grading=item.get('previous_grading')
+                previous_grading=item.get('previous_grading'),
+                solution=item.get('solution')
             )
             results.append(result)
         

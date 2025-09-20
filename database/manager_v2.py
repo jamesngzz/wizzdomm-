@@ -60,7 +60,21 @@ class DatabaseManagerV2:
                 if 'has_multiple_images' not in question_columns:
                     session.execute(text("ALTER TABLE v2_questions ADD COLUMN has_multiple_images BOOLEAN DEFAULT 0"))
                     session.commit()
-                
+
+                # Check for solution columns in questions table
+                solution_columns_needed = {
+                    'solution_answer': 'TEXT',
+                    'solution_steps': 'TEXT',
+                    'solution_points': 'TEXT',
+                    'solution_verified': 'BOOLEAN DEFAULT 0',
+                    'solution_generated_at': 'DATETIME'
+                }
+
+                for col_name, col_type in solution_columns_needed.items():
+                    if col_name not in question_columns:
+                        session.execute(text(f"ALTER TABLE v2_questions ADD COLUMN {col_name} {col_type}"))
+                        session.commit()
+
                 # Check for multiple images columns in submission_items table
                 result_submission_items = session.execute(text("PRAGMA table_info(v2_submission_items)"))
                 submission_item_columns = [row[1] for row in result_submission_items.fetchall()]
@@ -301,7 +315,75 @@ class DatabaseManagerV2:
                         print(f"Warning: Failed to delete image {file_path}: {e}")
             
             return True
-    
+
+    # ============ QUESTION SOLUTION OPERATIONS ============
+
+    def update_question_solution(self, question_id: int, solution_answer: str,
+                               solution_steps: str, solution_points: str,
+                               solution_verified: bool = False,
+                               solution_generated_at: datetime = None) -> bool:
+        """Update question with AI-generated solution"""
+        with self.get_session() as session:
+            question = session.query(QuestionV2).filter(QuestionV2.id == question_id).first()
+            if not question:
+                return False
+
+            question.solution_answer = solution_answer
+            question.solution_steps = solution_steps
+            question.solution_points = solution_points
+            question.solution_verified = solution_verified
+            question.solution_generated_at = solution_generated_at or datetime.now()
+
+            session.commit()
+            return True
+
+    def update_question_solution_verification(self, question_id: int, verified: bool) -> bool:
+        """Update solution verification status"""
+        with self.get_session() as session:
+            question = session.query(QuestionV2).filter(QuestionV2.id == question_id).first()
+            if not question:
+                return False
+
+            question.solution_verified = verified
+            session.commit()
+            return True
+
+    def get_questions_with_solutions(self, exam_id: int = None) -> List[QuestionV2]:
+        """Get questions that have AI-generated solutions"""
+        with self.get_session() as session:
+            query = session.query(QuestionV2).filter(QuestionV2.solution_answer.isnot(None))
+
+            if exam_id:
+                query = query.filter(QuestionV2.exam_id == exam_id)
+
+            return query.all()
+
+    def get_questions_without_solutions(self, exam_id: int = None) -> List[QuestionV2]:
+        """Get questions that don't have AI-generated solutions"""
+        with self.get_session() as session:
+            query = session.query(QuestionV2).filter(QuestionV2.solution_answer.is_(None))
+
+            if exam_id:
+                query = query.filter(QuestionV2.exam_id == exam_id)
+
+            return query.all()
+
+    def clear_question_solution(self, question_id: int) -> bool:
+        """Clear/reset AI-generated solution for a question"""
+        with self.get_session() as session:
+            question = session.query(QuestionV2).filter(QuestionV2.id == question_id).first()
+            if not question:
+                return False
+
+            question.solution_answer = None
+            question.solution_steps = None
+            question.solution_points = None
+            question.solution_verified = False
+            question.solution_generated_at = None
+
+            session.commit()
+            return True
+
     # ============ SUBMISSION OPERATIONS ============
     
     def create_submission(self, exam_id: int, student_name: str, 
