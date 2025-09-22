@@ -126,7 +126,7 @@ def display_cropping_interface():
     with col2:
         st.markdown("**📝 Question Details:**")
         if cropped_img:
-            st.image(cropped_img, caption="Cropped Preview", width="stretch")
+            st.image(cropped_img, caption="Cropped Preview")
         
         with st.form("question_form"):
             question_label = st.text_input("Question Label*", placeholder="e.g., 1a, 2b, 3")

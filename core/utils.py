@@ -59,7 +59,7 @@ def validate_image_file(uploaded_file) -> Tuple[bool, str]:
 def display_image_with_info(image_path: str, caption: str = ""):
     """Display image with file information"""
     if os.path.exists(image_path):
-        st.image(image_path, caption=caption, width="stretch")
+        st.image(image_path, caption=caption)
         
         # Show file info
         file_size = os.path.getsize(image_path)

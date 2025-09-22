@@ -53,6 +53,10 @@ class ResultsService:
                     "error_description": grading.error_description,
                     "partial_credit": grading.partial_credit,
                     "error_phrases": error_phrases,
+                    "critical_errors": grading.critical_errors,
+                    "part_errors": grading.part_errors,
+                    "teacher_notes": grading.teacher_notes,
+                    "submission_item_id": item.id,  # Need this for saving comments
                 })
         
         image_paths = []
@@ -70,6 +74,19 @@ class ResultsService:
             "submission_image_paths": image_paths,
             "graded_items": sorted(graded_items_data, key=lambda x: x['question_label'])
         }
+
+    @staticmethod
+    def save_teacher_comment(submission_item_id: int, teacher_notes: str) -> bool:
+        """Save teacher notes for a submission item."""
+        try:
+            # Get the grading for this submission item
+            grading = db_manager.get_grading_by_submission_item(submission_item_id)
+            if not grading:
+                return False
+            return db_manager.update_grading(grading.id, teacher_notes=teacher_notes)
+        except Exception as e:
+            print(f"Error saving teacher comment: {e}")
+            return False
 
 # Create a single global instance for easy access
 results_service = ResultsService()

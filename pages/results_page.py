@@ -45,7 +45,7 @@ def show_results_page():
 
     submission_id = selected_submission_data['submission'].id
     results_data = results_service.get_results_for_submission(submission_id)
-
+    
     if not results_data:
         st.error("Could not load results for this submission.")
         return
@@ -78,14 +78,18 @@ def show_results_page():
                 st.error(f"Image not found at path: {image_paths[page_index]}")
                 return
 
+            # Add circle count control
+            circle_count = st.slider("Number of circles to add:", min_value=0, max_value=15, value=0, step=1)
+            
             initial_drawing = CanvasHelper.generate_initial_drawing(
                 graded_items=results_data['graded_items'],
-                current_page_index=page_index
+                current_page_index=page_index,
+                circle_count=circle_count
             )
 
             st.info("Drag and drop the colored boxes to the correct positions on the answer sheet.")
             # Scale image to fit container while maintaining aspect ratio
-            max_width = 800  # Maximum width for better viewing
+            max_width = 500  # Maximum width for better viewing
             scale_factor = min(max_width / bg_image.width, 1.0)  # Don't upscale
             display_width = int(bg_image.width * scale_factor)
             display_height = int(bg_image.height * scale_factor)
@@ -125,6 +129,7 @@ def show_results_page():
         else:
             items_to_show = items_for_current_page
             
+        # Replace the current marking card section (lines 128-155) with:
         if 'items_to_show' in locals():
             for item in items_to_show:
                 with st.container(border=True):
@@ -137,19 +142,66 @@ def show_results_page():
                         st.markdown(f"**{item['question_label']}** (from page {source_page_indices[0] + 1})")
                     else:
                         st.markdown(f"**{item['question_label']}**")
+                    
+                    # Main result
                     if item['is_correct']:
                         st.success("**Result: CORRECT** ✅")
                     else:
                         st.error("**Result: INCORRECT** ❌")
+                    
                     if item['confidence']:
                         st.metric("AI Confidence", f"{item['confidence']:.1%}")
+                    
+                    if item['partial_credit']:
+                        st.info("ℹ️ Partial credit was suggested for this answer.")
+                    
+                    # ADD DETAILED EXPLANATIONS HERE (like B4)
                     if not item['is_correct']:
-                        if item['partial_credit']:
-                            st.info("ℹ️ Partial credit was suggested.")
-                        if item['error_description']:
-                            st.warning(f"**Analysis:** {item['error_description']}")
-                        if item['error_phrases']:
-                            st.markdown("**Key Errors:**")
-                            for phrase in item['error_phrases']:
-                                st.markdown(f"- _{phrase}_")
-                st.markdown("---")
+                        # Parse critical and part errors from the grading data
+                        critical_errors = []
+                        part_errors = []
+                        
+                        # You'll need to modify results_service.py to include these fields
+                        if item.get('critical_errors'):
+                            try:
+                                critical_errors = json.loads(item['critical_errors'])
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        
+                        if item.get('part_errors'):
+                            try:
+                                part_errors = json.loads(item['part_errors'])
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+                        
+                        # Display critical errors (red)
+                        if critical_errors:
+                            with st.container(border=True):
+                                st.markdown("**🔴 Critical Errors (Lỗi chí mạng):**")
+                                for error in critical_errors:
+                                    st.error(f"**{error.get('description', '')}**")
+                                    if error.get('phrases'):
+                                        for phrase in error['phrases']:
+                                            st.markdown(f"- {phrase}")
+                        
+                        # Display part errors (yellow/warning)
+                        if part_errors:
+                            with st.container(border=True):
+                                st.markdown("**🟡 Part Errors (Lỗi nhỏ/Không chắc chắn):**")
+                                for error in part_errors:
+                                    st.warning(f"**{error.get('description', '')}**")
+                                    if error.get('phrases'):
+                                        for phrase in error['phrases']:
+                                            st.markdown(f"- {phrase}")
+                        
+                        # Fallback to legacy error display
+                        if not critical_errors and not part_errors and item['error_description']:
+                            with st.container(border=True):
+                                st.markdown("**🔍 Error Analysis:**")
+                                st.warning(item['error_description'])
+                                if item['error_phrases']:
+                                    st.markdown("**Key error points:**")
+                                    for phrase in item['error_phrases']:
+                                        st.markdown(f"- {phrase}")
+        
+       

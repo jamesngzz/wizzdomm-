@@ -523,9 +523,13 @@ class DatabaseManagerV2:
                    .all())
     
     def get_submission_item_by_id(self, item_id: int) -> Optional[SubmissionItemV2]:
-        """Get submission item by ID"""
+        """Get submission item by ID with question and grading eagerly loaded"""
         with self.get_session() as session:
-            return session.query(SubmissionItemV2).filter(SubmissionItemV2.id == item_id).first()
+            return (session.query(SubmissionItemV2)
+                   .options(joinedload(SubmissionItemV2.question))
+                   .options(joinedload(SubmissionItemV2.grading))
+                   .filter(SubmissionItemV2.id == item_id)
+                   .first())
     
     # ============ GRADING OPERATIONS ============
     
@@ -661,6 +665,11 @@ class DatabaseManagerV2:
                    .join(SubmissionItemV2)
                    .filter(SubmissionItemV2.submission_id == submission_id)
                    .all())
+    
+    def get_grading_by_submission_item(self, submission_item_id: int) -> Optional[GradingV2]:
+        """Get grading by submission item ID"""
+        with self.get_session() as session:
+            return session.query(GradingV2).filter(GradingV2.submission_item_id == submission_item_id).first()
     
     def update_grading(self, grading_id: int, is_correct: bool = None,
                       confidence: float = None, error_description: str = None,
