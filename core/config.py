@@ -6,7 +6,7 @@ load_dotenv()
 
 # ==================== APP CONFIGURATION ====================
 APP_TITLE = "Wizzdom"
-APP_SUBTITLE = "Hệ thống chấm bài thông minh"
+APP_SUBTITLE = ""
 APP_ICON = "🧠"
 LAYOUT = "wide"
 
@@ -39,10 +39,12 @@ SUBMISSIONS_DIR = os.path.join(IMAGES_DIR, "submissions")
 for directory in ["data", STATIC_DIR, IMAGES_DIR, EXAMS_DIR, QUESTIONS_DIR, ANSWERS_DIR, SUBMISSIONS_DIR]:
     os.makedirs(directory, exist_ok=True)
 
-# ==================== IMAGE SETTINGS ====================
-# Supported image formats
+# ==================== FILE SETTINGS ====================
+# Supported file formats (images + PDF)
 SUPPORTED_IMAGE_FORMATS = ["png", "jpg", "jpeg"]
+SUPPORTED_FILE_FORMATS = ["png", "jpg", "jpeg", "pdf"]
 MAX_IMAGE_SIZE_MB = 50
+MAX_PDF_SIZE_MB = 20  # Gemini limit for inline PDF
 
 # ==================== CROPPING SETTINGS ====================
 CROP_BOX_COLOR = "#0066CC"  # Blue color for crop box

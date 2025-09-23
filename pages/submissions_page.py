@@ -64,22 +64,26 @@ def show_submissions_page():
             # Lấy thông tin tiến độ
             #_, _, progress = SubmissionService.get_submission_progress(sub_id)
             
-            col1, col2, col3 = st.columns([2, 2, 1])
+            col1, col2, col3, col4 = st.columns([2, 1.5, 1, 1])
             with col1:
                 st.markdown(f"**🧑‍🎓 {sub_info['student_name']}**")
                 st.caption(f"Nộp lúc: {sub_info['created_at'].strftime('%Y-%m-%d %H:%M')}")
             with col2:
                 # Hiển thị số lượng item đã ánh xạ là đủ ở đây
                 item_count = sub_info['item_count']
-                st.markdown(f"**Câu trả lời đã ánh xạ:** {item_count}")
+                st.markdown(f"**Ánh xạ:** {item_count}")
 
             with col3:
-                # Thêm khoảng trống để căn chỉnh
-                st.markdown("") 
-                st.markdown("")
-                if st.button("📝 Tiếp tục ánh xạ", key=f"map_{sub_id}"):
+                if st.button("📝 Ánh xạ", key=f"map_{sub_id}", help="Tiếp tục ánh xạ câu trả lời"):
                     app_state.current_submission_id = sub_id
                     app_state.mapping_mode = True
+                    st.rerun()
+
+            with col4:
+                if st.button("🎯 Chấm bài", key=f"grade_{sub_id}", help="Chấm bài và xem kết quả"):
+                    # Set state để navigate đến grading results page với submission này
+                    app_state.selected_submission_for_grading = sub_id
+                    app_state.page = "🎯 Chấm bài & Kết quả"
                     st.rerun()
 
     st.divider()

@@ -12,12 +12,14 @@ from core.utils import (
     save_cropped_image,
     save_multiple_cropped_images,
     save_uploaded_image,
-    validate_image_file
+    save_uploaded_file,
+    validate_image_file,
+    is_pdf_file
 )
 from core.config import QUESTIONS_DIR, ANSWERS_DIR, EXAMS_DIR, SUBMISSIONS_DIR
 
 class ImageService:
-    """Service layer for all image processing and file storage operations."""
+    """Service layer for all file processing and storage operations (images and PDFs)."""
 
     @staticmethod
     def save_question_images(
@@ -63,27 +65,50 @@ class ImageService:
         save_dir: str,
         filename_prefix: str
     ) -> Tuple[bool, str, List[str]]:
-        """Validates and saves a list of uploaded files."""
+        """Validates and saves a list of uploaded files (images or PDFs)."""
         if not uploaded_files:
             return False, "No files were provided.", []
 
-        saved_paths = []
+        all_image_paths = []
         errors = []
+        pdf_count = 0
+        image_count = 0
+
         for up_file in uploaded_files:
-            is_valid, msg = validate_image_file(up_file)
-            if not is_valid:
+            # Use new save_uploaded_file function that handles both images and PDFs
+            success, msg, file_paths = save_uploaded_file(up_file, save_dir, filename_prefix)
+
+            if not success:
                 errors.append(f"{up_file.name}: {msg}")
                 continue
-            try:
-                path = save_uploaded_image(up_file, save_dir, filename_prefix)
-                saved_paths.append(path)
-            except Exception as e:
-                errors.append(f"Could not save {up_file.name}: {e}")
+
+            all_image_paths.extend(file_paths)
+
+            # Track file types for better messaging
+            if is_pdf_file(up_file):
+                pdf_count += 1
+            else:
+                image_count += 1
 
         if errors:
-            return False, " ".join(errors), saved_paths
-        
-        return True, f"Successfully saved {len(saved_paths)} images.", saved_paths
+            error_msg = "Some files failed: " + "; ".join(errors)
+            if all_image_paths:
+                return False, error_msg, all_image_paths
+            else:
+                return False, error_msg, []
+
+        # Create success message
+        success_parts = []
+        if image_count > 0:
+            success_parts.append(f"{image_count} ảnh")
+        if pdf_count > 0:
+            success_parts.append(f"{pdf_count} PDF")
+
+        file_desc = " và ".join(success_parts)
+        total_images = len(all_image_paths)
+        success_msg = f"Đã lưu {file_desc}, tạo ra {total_images} trang ảnh."
+
+        return True, success_msg, all_image_paths
 
     @staticmethod
     def save_uploaded_exam_images(

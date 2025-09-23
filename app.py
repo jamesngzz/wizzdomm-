@@ -12,9 +12,8 @@ from core.state_manager import app_state  # Use the new state manager
 from pages import (
     show_create_exam_page,
     show_digitize_exam_page,
-    show_submissions_page, 
-    show_grading_page,
-    show_results_page
+    show_submissions_page,
+    show_grading_results_page
 )
 
 # Configure Streamlit page
@@ -35,8 +34,7 @@ def main():
         ("📝 Tạo đề thi", show_create_exam_page),
         ("✂️ Số hóa đề thi", show_digitize_exam_page),
         ("👥 Bài làm học sinh", show_submissions_page),
-        ("🎯 Chấm bài", show_grading_page),
-        ("📊 Kết quả & Báo cáo", show_results_page)
+        ("🎯 Chấm bài & Kết quả", show_grading_results_page)
     ]
     
     page_names = [name for name, _ in PAGES]

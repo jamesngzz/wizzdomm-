@@ -38,6 +38,7 @@ class AppState:
             "question_to_delete_from_grading": None,
             "regrade_item_id": None,
             "regrade_clarify_text": "",
+            "selected_submission_for_grading": None,
 
             # Modal-related state
             "active_modal": None,

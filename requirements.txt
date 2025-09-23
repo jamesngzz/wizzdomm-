@@ -20,6 +20,10 @@ google-genai
 # Image Processing (keep original tested version)
 pillow==10.1.0
 
+# PDF Processing (for PDF to image conversion)
+PyPDF2==3.0.1
+pdf2image==1.17.0
+
 # Configuration Management (keep original tested version)
 python-dotenv==1.0.0
 

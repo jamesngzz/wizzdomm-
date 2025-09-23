@@ -11,15 +11,58 @@ class CanvasHelper:
     _drawing_cache = {}  # Cache to prevent regenerating identical drawings
 
     @staticmethod
+    def _wrap_text(text: str, max_width_chars: int = 20) -> str:
+        """Wrap text to prevent exceeding 60% of image width with better alignment."""
+        if len(text) <= max_width_chars:
+            return text
+
+        words = text.split(' ')
+        lines = []
+        current_line = ""
+
+        for word in words:
+            # Check if adding this word would exceed the limit
+            test_line = current_line + (" " if current_line else "") + word
+            if len(test_line) <= max_width_chars:
+                current_line = test_line
+            else:
+                # If current line has content, save it and start new line
+                if current_line:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    # Word is too long, need to break it
+                    if len(word) > max_width_chars:
+                        # Break long word
+                        lines.append(word[:max_width_chars-1] + "-")
+                        current_line = word[max_width_chars-1:]
+                    else:
+                        current_line = word
+
+        if current_line:
+            lines.append(current_line)
+
+        return "\n".join(lines)
+
+    @staticmethod
     def _create_annotation_object(
         text: str,
         left: int,
         top: int,
         fill_color: str,
-        font_size: int = 24,
-        text_color: str = "#000000"
+        font_size: int = 20,
+        text_color: str = "#000000",
+        image_width: int = 700
     ) -> Dict[str, Any]:
-        """Creates a single textbox object for the canvas."""
+        """Creates a single textbox object for the canvas with improved text wrapping."""
+        # Calculate max characters based on 60% of image width
+        max_width_chars = int((image_width * 0.6) / (font_size * 0.6))
+        wrapped_text = CanvasHelper._wrap_text(text, max_width_chars)
+
+        # Calculate height based on number of lines
+        line_count = wrapped_text.count('\n') + 1
+        text_height = font_size * line_count * 1.2
+
         return {
             "type": "textbox",
             "version": "5.3.0",
@@ -27,11 +70,11 @@ class CanvasHelper:
             "originY": "top",
             "left": left,
             "top": top,
-            "width": len(text) * font_size * 0.6,
-            "height": font_size + 10,
+            "width": min(len(text) * font_size * 0.6, image_width * 0.6),
+            "height": text_height,
             "fill": fill_color,
             "stroke": fill_color,
-            "strokeWidth": 2,
+            "strokeWidth": 1,  # Reduced stroke width
             "strokeDashArray": None,
             "strokeLineCap": "butt",
             "strokeDashOffset": 0,
@@ -52,16 +95,16 @@ class CanvasHelper:
             "globalCompositeOperation": "source-over",
             "skewX": 0,
             "skewY": 0,
-            "text": text,
+            "text": wrapped_text,
             "fontSize": font_size,
-            "fontWeight": "bold",
+            "fontWeight": "normal",  # Changed from "bold" to "normal"
             "fontFamily": "Arial",
             "fontStyle": "normal",
-            "lineHeight": 1.16,
+            "lineHeight": 1.2,  # Slightly increased for better readability
             "underline": False,
             "overline": False,
             "linethrough": False,
-            "textAlign": "center",
+            "textAlign": "left",  # Left alignment
             "textBackgroundColor": "",
             "charSpacing": 0,
             "path": None,
@@ -121,7 +164,8 @@ class CanvasHelper:
     def generate_initial_drawing(
         graded_items: List[Dict[str, Any]],
         current_page_index: int,
-        circle_count: int = 0
+        circle_count: int = 0,
+        image_width: int = 700
     ) -> Dict[str, Any]:
         """
         Generates the full initial drawing JSON for a specific page.
@@ -130,8 +174,8 @@ class CanvasHelper:
         """
         # Create cache key from input data
         cache_data = {
-            'items': [(item.get('question_label'), item.get('is_correct'), 
-                      item.get('source_page_indices', [item.get('source_page_index', 0)])) 
+            'items': [(item.get('question_label'), item.get('is_correct'),
+                      item.get('source_page_indices', [item.get('source_page_index', 0)]))
                      for item in graded_items],
             'page_index': current_page_index,
             'circle_count': circle_count
@@ -166,10 +210,11 @@ class CanvasHelper:
                     left=10,
                     top=current_top,
                     fill_color="#00ff00",
-                    text_color="#00ff00"
+                    text_color="#00ff00",
+                    image_width=image_width
                 )
                 objects.append(annotation)
-                current_top += 50
+                current_top += 60  # Increased spacing for multiline text
             else:
                 # Parse critical and part errors from the grading data (same as results page)
                 critical_errors = []
@@ -187,59 +232,39 @@ class CanvasHelper:
                     except (json.JSONDecodeError, TypeError):
                         pass
                 
-                # Display critical errors (red boxes)
+                # Display critical error phrases only (no descriptions)
                 if critical_errors:
                     for error in critical_errors:
-                        description = error.get('description', 'Critical Error')
-                        annotation = CanvasHelper._create_annotation_object(
-                            text=f"🔴 {description}",
-                            left=10,
-                            top=current_top,
-                            fill_color="#ff0000",
-                            text_color="#ff0000"
-                        )
-                        objects.append(annotation)
-                        current_top += 50
-                        
-                        # Add phrases from this error
+                        # Only show phrases, skip description
                         if error.get('phrases'):
                             for phrase in error['phrases']:
                                 annotation = CanvasHelper._create_annotation_object(
                                     text=f"❌ {phrase}",
-                                    left=30,  # Indent slightly
+                                    left=10,
                                     top=current_top,
                                     fill_color="#ff0000",
-                                    text_color="#ff0000"
+                                    text_color="#ff0000",
+                                    image_width=image_width
                                 )
                                 objects.append(annotation)
-                                current_top += 40
+                                current_top += 50
                 
-                # Display part errors (yellow boxes)
+                # Display part error phrases only (no descriptions)
                 if part_errors:
                     for error in part_errors:
-                        description = error.get('description', 'Part Error')
-                        annotation = CanvasHelper._create_annotation_object(
-                            text=f"🟡 {description}",
-                            left=10,
-                            top=current_top,
-                            fill_color="#ffff00",
-                            text_color="#ffff00"
-                        )
-                        objects.append(annotation)
-                        current_top += 50
-                        
-                        # Add phrases from this error
+                        # Only show phrases, skip description
                         if error.get('phrases'):
                             for phrase in error['phrases']:
                                 annotation = CanvasHelper._create_annotation_object(
                                     text=f"⚠️ {phrase}",
-                                    left=30,  # Indent slightly
+                                    left=10,
                                     top=current_top,
                                     fill_color="#ffaa00",
-                                    text_color="#ffaa00"
+                                    text_color="#ffaa00",
+                                    image_width=image_width
                                 )
                                 objects.append(annotation)
-                                current_top += 40
+                                current_top += 50
                 
                 # Fallback to legacy error display if no new format available
                 if not critical_errors and not part_errors:
@@ -252,10 +277,11 @@ class CanvasHelper:
                                 left=10,
                                 top=current_top,
                                 fill_color="#ff0000",
-                                text_color="#ff0000"
+                                text_color="#ff0000",
+                                image_width=image_width
                             )
                             objects.append(annotation)
-                            current_top += 50
+                            current_top += 60
                     else:
                         # Generic fallback
                         annotation = CanvasHelper._create_annotation_object(
@@ -263,10 +289,11 @@ class CanvasHelper:
                             left=10,
                             top=current_top,
                             fill_color="#ff0000",
-                            text_color="#ff0000"
+                            text_color="#ff0000",
+                            image_width=image_width
                         )
                         objects.append(annotation)
-                        current_top += 50
+                        current_top += 60
 
         # Add circles based on circle_count (ONLY THIS LOGIC)
         circle_positions = [
