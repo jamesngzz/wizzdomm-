@@ -15,31 +15,31 @@ from core.state_manager import app_state
 from services.exam_service import ExamService
 from services.question_service import QuestionService
 from services.question_solver_service import question_solver_service
-from components.shared_components import render_selection_box, render_confirmation_dialog
+from components.shared_components import render_selection_box, render_confirmation_dialog, render_delete_modal
 from components.solution_review import SolutionReviewComponent
 from core.utils import format_question_label
 import asyncio
 
 def show_digitize_exam_page():
     """Page for digitizing exams, using shared components for selection and deletion."""
-    st.header("✂️ Digitize Exam Questions")
-    st.markdown("Crop individual questions from the exam paper to create a structured question bank.")
+    st.header("✂️ Số hóa câu hỏi đề thi")
+    st.markdown("Cắt từng câu hỏi riêng biệt từ đề thi để tạo ngân hàng câu hỏi có cấu trúc.")
 
     # --- Exam Selection ---
-    st.subheader("📚 Select Exam to Digitize")
+    st.subheader("📚 Chọn đề thi để số hóa")
 
     success, _, exams = ExamService.get_exam_list()
     if not exams:
-        st.warning("⚠️ No exams found. Please create an exam first.")
-        if st.button("➕ Create New Exam"):
-            app_state.page = "📝 Create Exam"
+        st.warning("⚠️ Không tìm thấy đề thi nào. Vui lòng tạo đề thi trước.")
+        if st.button("➕ Tạo đề thi mới"):
+            app_state.page = "📝 Tạo đề thi"
             st.rerun()
         return
 
     selected_exam = render_selection_box(
-        label="Choose an exam to digitize:",
+        label="Chọn đề thi để số hóa:",
         options=exams,
-        format_func=lambda exam: f"{exam['name']} - {exam.get('topic', 'N/A')} (ID: {exam['id']})",
+        format_func=lambda exam: f"{exam['name']} - {exam.get('topic', 'Chưa có')} (ID: {exam['id']})",
         key="digitize_exam_selector"
     )
 
@@ -48,30 +48,38 @@ def show_digitize_exam_page():
         
     app_state.current_exam_id = selected_exam['id']
 
-    # --- Delete Confirmation Dialog Logic ---
+    # --- Delete Confirmation Modal Logic ---
     if app_state.question_to_delete:
         question_info = app_state.question_to_delete
-        
+
         def confirm_delete():
             success, msg, _ = QuestionService.delete_question(question_info['id'])
             st.toast(msg, icon="✅" if success else "❌")
             app_state.question_to_delete = None
+            st.rerun()
 
         def cancel_delete():
             app_state.question_to_delete = None
+            st.rerun()
 
-        render_confirmation_dialog(
+        # Use new modal instead of old dialog
+        modal_active = render_delete_modal(
             item_name=question_info['label'],
+            item_type="question",
             on_confirm=confirm_delete,
             on_cancel=cancel_delete,
-            dialog_key=f"delete_q_{question_info['id']}"
+            modal_key=f"delete_q_{question_info['id']}",
+            warning_text="Thao tác này sẽ xóa vĩnh viễn câu hỏi và tất cả câu trả lời cùng điểm số của học sinh liên quan."
         )
-        st.divider()
+
+        # Stop rendering rest of page while modal is active
+        if modal_active:
+            return
 
     # --- Display Existing Questions ---
     success, _, questions = QuestionService.get_questions_by_exam(app_state.current_exam_id)
     if questions:
-        with st.expander(f"📋 View Existing Questions ({len(questions)})"):
+        with st.expander(f"📋 Xem câu hỏi hiện có ({len(questions)})"):
             for q in questions:
                 label = format_question_label(q.order_index, q.part_label)
                 col1, col2, col3 = st.columns([3, 2, 1])
@@ -80,7 +88,7 @@ def show_digitize_exam_page():
                 with col2:
                     st.image(q.question_image_path, width=100)
                 with col3:
-                    if st.button("🗑️ Delete", key=f"delete_btn_{q.id}", help=f"Delete {label}"):
+                    if st.button("🗑️ Xóa", key=f"delete_btn_{q.id}", help=f"Xóa {label}"):
                         app_state.question_to_delete = {'id': q.id, 'label': label}
                         st.rerun()
     st.divider()
@@ -92,7 +100,7 @@ def display_cropping_interface():
     """Renders the main image cropping UI."""
     exam_details = ExamService.get_exam_details(app_state.current_exam_id)[2]
     if not exam_details or not exam_details.original_image_paths:
-        st.warning("This exam has no images to digitize.")
+        st.warning("Đề thi này không có hình ảnh nào để số hóa.")
         return
 
     try:
@@ -101,42 +109,42 @@ def display_cropping_interface():
         image_paths = []
 
     if not image_paths:
-        st.error("Không tìm thấy ảnh nào cho kỳ thi này.")
+        st.error("Không tìm thấy hình ảnh nào cho đề thi này.")
         return
     
     # Page navigation for multi-page exams
     page_index = st.number_input(
-        f"Select page (1 to {len(image_paths)})", 
-        min_value=1, max_value=len(image_paths), value=1, 
-        help="Select which page of the exam paper to crop from."
+        f"Chọn trang (1 đến {len(image_paths)})",
+        min_value=1, max_value=len(image_paths), value=1,
+        help="Chọn trang nào của đề thi để cắt câu hỏi."
     ) - 1
 
     current_image_path = image_paths[page_index]
     if not os.path.exists(current_image_path):
-        st.error(f"Image not found: {current_image_path}")
+        st.error(f"Không tìm thấy hình ảnh: {current_image_path}")
         return
 
     img = Image.open(current_image_path)
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.markdown("**🎯 Crop a question area:**")
+        st.markdown("**🎯 Cắt vùng câu hỏi:**")
         cropped_img = st_cropper(img, realtime_update=True, box_color="#0066CC", return_type="image")
 
     with col2:
-        st.markdown("**📝 Question Details:**")
+        st.markdown("**📝 Chi tiết câu hỏi:**")
         if cropped_img:
-            st.image(cropped_img, caption="Cropped Preview")
+            st.image(cropped_img, caption="Xem trước vùng đã cắt")
         
         with st.form("question_form"):
-            question_label = st.text_input("Question Label*", placeholder="e.g., 1a, 2b, 3")
-            submitted = st.form_submit_button("💾 Save Question", type="primary")
+            question_label = st.text_input("Nhãn câu hỏi*", placeholder="vd: 1a, 2b, 3")
+            submitted = st.form_submit_button("💾 Lưu câu hỏi", type="primary")
 
             if submitted:
                 if not question_label.strip():
-                    st.error("Question label cannot be empty.")
+                    st.error("Nhãn câu hỏi không được để trống.")
                 elif cropped_img:
-                    with st.spinner("Saving question..."):
+                    with st.spinner("Đang lưu câu hỏi..."):
                         success, message, _ = QuestionService.create_question(
                             exam_id=app_state.current_exam_id,
                             question_label=question_label,
@@ -152,13 +160,13 @@ def display_cropping_interface():
 
     # --- Solution Generation Section ---
     st.divider()
-    st.subheader("🧮 AI Question Solving")
+    st.subheader("🧮 Giải câu hỏi bằng AI")
 
     # Get current questions for this exam
     success, _, exam_questions = QuestionService.get_questions_by_exam(app_state.current_exam_id)
 
     if not exam_questions:
-        st.info("📝 Chưa có câu hỏi nào được tạo. Hãy crop các câu hỏi trước.")
+        st.info("📝 Chưa có câu hỏi nào được tạo. Hãy cắt các câu hỏi trước.")
         return
 
     # Filter questions that don't have solutions yet
@@ -185,7 +193,7 @@ def display_cropping_interface():
 
     # Batch solution generation
     if questions_without_solutions:
-        st.markdown("### 🚀 Tạo Lời Giải Hàng Loạt")
+        st.markdown("### 🚀 Tạo lời giải hàng loạt")
 
         col1, col2 = st.columns([2, 1])
 
@@ -196,7 +204,7 @@ def display_cropping_interface():
             if st.button("🧮 Giải Tất Cả", type="primary", key="solve_all_questions"):
                 question_ids = [q.id for q in questions_without_solutions]
 
-                with st.spinner(f"Đang giải {len(question_ids)} câu hỏi bằng GPT-5 Mini..."):
+                with st.spinner(f"Đang giải {len(question_ids)} câu hỏi bằng AI..."):
                     # Run async batch solving
                     try:
                         loop = asyncio.new_event_loop()
@@ -216,20 +224,20 @@ def display_cropping_interface():
 
                             # Show detailed results if available
                             if results and results.get('details'):
-                                with st.expander("Chi tiết lỗi"):
+                                with st.expander("📝 Chi tiết lỗi"):
                                     for detail in results['details']:
                                         status = detail['status']
                                         if status == 'success':
-                                            st.success(f"Câu {detail['question_id']}: {detail['message']}")
+                                            st.success(f"✅ Câu {detail['question_id']}: {detail['message']}")
                                         else:
-                                            st.error(f"Câu {detail['question_id']}: {detail['message']}")
+                                            st.error(f"❌ Câu {detail['question_id']}: {detail['message']}")
 
                     except Exception as e:
                         st.error(f"❌ Lỗi trong quá trình giải: {str(e)}")
 
     # Solution review section
     if questions_with_solutions:
-        st.markdown("### 📋 Xem và Duyệt Lời Giải")
+        st.markdown("### 📋 Xem và duyệt lời giải")
 
         # Show solution summary
         SolutionReviewComponent.render_solution_summary(questions_with_solutions)
@@ -239,12 +247,12 @@ def display_cropping_interface():
         unverified_solutions = [q for q in questions_with_solutions if not q.solution_verified]
 
         if unverified_solutions:
-            st.markdown("#### ⚡ Thao Tác Hàng Loạt")
+            st.markdown("#### ⚡ Thao tác hàng loạt")
             unverified_ids = [q.id for q in unverified_solutions]
             SolutionReviewComponent.render_batch_solution_actions(unverified_ids)
 
         # Individual solution review
-        st.markdown("#### 🔍 Xem Chi Tiết Lời Giải")
+        st.markdown("#### 🔍 Xem chi tiết lời giải")
 
         selected_question = st.selectbox(
             "Chọn câu hỏi để xem lời giải:",
@@ -261,7 +269,7 @@ def display_cropping_interface():
 
             if success and solution_data:
                 # Tabs for different views
-                tab1, tab2, tab3 = st.tabs(["👀 Xem Lời Giải", "✏️ Chỉnh Sửa", "🎯 Phê Duyệt"])
+                tab1, tab2, tab3 = st.tabs(["👀 Xem lời giải", "✏️ Chỉnh sửa", "🎯 Phê duyệt"])
 
                 with tab1:
                     SolutionReviewComponent.render_solution_display(solution_data, question_id)
@@ -283,7 +291,7 @@ def display_cropping_interface():
 
     # Individual question solving
     if questions_without_solutions:
-        st.markdown("### 🎯 Giải Từng Câu Hỏi")
+        st.markdown("### 🎯 Giải từng câu hỏi")
 
         selected_unsolved = st.selectbox(
             "Chọn câu hỏi để giải:",
@@ -295,8 +303,8 @@ def display_cropping_interface():
         if selected_unsolved:
             question_id = selected_unsolved.id
 
-            if st.button(f"🧮 Giải Câu {selected_unsolved.order_index}{selected_unsolved.part_label or ''}", key=f"solve_individual_{question_id}"):
-                with st.spinner("Đang giải câu hỏi bằng GPT-5 Mini..."):
+            if st.button(f"🧮 Giải câu {selected_unsolved.order_index}{selected_unsolved.part_label or ''}", key=f"solve_individual_{question_id}"):
+                with st.spinner("Đang giải câu hỏi bằng AI..."):
                     try:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
@@ -310,7 +318,7 @@ def display_cropping_interface():
 
                             # Show the generated solution immediately
                             if solution_data:
-                                st.markdown("#### 📄 Lời Giải Vừa Tạo:")
+                                st.markdown("#### 📄 Lời giải vừa tạo:")
                                 SolutionReviewComponent.render_solution_display(solution_data, question_id)
 
                             st.balloons()

@@ -5,8 +5,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ==================== APP CONFIGURATION ====================
-APP_TITLE = "Trợ lý Chấm bài"
-APP_ICON = "📚"
+APP_TITLE = "Wizzdom"
+APP_SUBTITLE = "Hệ thống chấm bài thông minh"
+APP_ICON = "🧠"
 LAYOUT = "wide"
 
 # ==================== MODEL CONFIGURATION ====================

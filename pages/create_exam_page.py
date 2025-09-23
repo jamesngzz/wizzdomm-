@@ -14,13 +14,13 @@ from components.file_uploader import FileUploaderComponent
 
 def show_create_exam_page():
     """Page for creating new exams, using the service layer for all logic."""
-    st.header("📝 Create New Exam")
-    st.markdown("Start by uploading exam paper images and entering basic information.")
+    st.header("📝 Tạo đề thi mới")
+    st.markdown("Bắt đầu bằng cách tải lên hình ảnh đề thi và nhập thông tin cơ bản.")
 
     # Exam creation form
     with st.form("create_exam_form"):
         uploaded_files, exam_name, topic, grade_level = FileUploaderComponent.render_exam_uploader("create_exam")
-        submit_button = st.form_submit_button("🚀 Create Exam", type="primary")
+        submit_button = st.form_submit_button("🚀 Tạo đề thi", type="primary")
 
         if submit_button:
             # 1. Save images via the ImageService
@@ -29,7 +29,7 @@ def show_create_exam_page():
             )
 
             if not img_success:
-                st.error(f"❌ Image processing failed: {img_message}")
+                st.error(f"❌ Xử lý hình ảnh thất bại: {img_message}")
             else:
                 # 2. Create exam record via the ExamService
                 create_success, create_message, exam_id = ExamService.create_exam(
@@ -42,13 +42,13 @@ def show_create_exam_page():
                 if create_success:
                     app_state.current_exam_id = exam_id
                     st.success(f"✅ {create_message}")
-                    st.info("🎯 Next step: Go to 'Digitize Exam' to crop individual questions.")
+                    st.info("🎯 Bước tiếp theo: Chuyển đến 'Số hóa đề thi' để cắt từng câu hỏi.")
                 else:
-                    st.error(f"❌ Exam creation failed: {create_message}")
+                    st.error(f"❌ Tạo đề thi thất bại: {create_message}")
 
     # --- Show existing exams ---
     st.divider()
-    st.subheader("📚 Existing Exams")
+    st.subheader("📚 Đề thi hiện có")
 
     try:
         success, message, exams = ExamService.get_exam_list()
@@ -61,12 +61,12 @@ def show_create_exam_page():
             for exam in exams[:10]:
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    display_text = (f"📝 **{exam['name']}** - {exam.get('topic', 'N/A')} "
-                                    f"({exam['question_count']} questions)")
+                    display_text = (f"📝 **{exam['name']}** - {exam.get('topic', 'Chưa có')} "
+                                    f"({exam['question_count']} câu hỏi)")
                     st.write(display_text)
 
                 with col2:
-                    if st.button("📋 Details", key=f"details_{exam['id']}", help="View details"):
+                    if st.button("📋 Chi tiết", key=f"details_{exam['id']}", help="Xem chi tiết"):
                         # Toggle details view using the centralized state
                         if app_state.selected_exam_details == exam['id']:
                             app_state.selected_exam_details = None
@@ -77,17 +77,17 @@ def show_create_exam_page():
                 # Expanded view for the selected exam
                 if app_state.selected_exam_details == exam['id']:
                     with st.container(border=True):
-                        st.write(f"**Topic:** {exam.get('topic', 'N/A')}")
-                        st.write(f"**Grade Level:** {exam.get('grade_level', 'N/A')}")
-                        st.write(f"**Questions Digitized:** {exam['question_count']}")
-                        st.write(f"**Created:** {exam['created_at'].strftime('%Y-%m-%d %H:%M')}")
+                        st.write(f"**Chủ đề:** {exam.get('topic', 'Chưa có')}")
+                        st.write(f"**Khối lớp:** {exam.get('grade_level', 'Chưa có')}")
+                        st.write(f"**Câu hỏi đã số hóa:** {exam['question_count']}")
+                        st.write(f"**Tạo lúc:** {exam['created_at'].strftime('%Y-%m-%d %H:%M')}")
                         
-                        if st.button(f"✂️ Digitize This Exam", key=f"digitize_{exam['id']}"):
+                        if st.button(f"✂️ Số hóa đề thi này", key=f"digitize_{exam['id']}"):
                             app_state.current_exam_id = exam['id']
-                            app_state.page = "✂️ Digitize Exam"
+                            app_state.page = "✂️ Số hóa đề thi"
                             st.rerun()
         else:
-            st.info("No exams created yet. Create your first exam above!")
+            st.info("Chưa có đề thi nào được tạo. Hãy tạo đề thi đầu tiên ở trên!")
 
     except Exception as e:
-        st.error(f"An error occurred while displaying exams: {e}")
+        st.error(f"Có lỗi xảy ra khi hiển thị đề thi: {e}")

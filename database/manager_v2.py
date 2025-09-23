@@ -29,7 +29,6 @@ class DatabaseManagerV2:
                 missing_columns = []
                 expected_columns = {
                     'question_id': 'INTEGER',
-                    'confidence': 'FLOAT',
                     'partial_credit': 'BOOLEAN DEFAULT 0',
                     'clarify_notes': 'TEXT',
                     'critical_errors': 'TEXT',
@@ -672,9 +671,9 @@ class DatabaseManagerV2:
             return session.query(GradingV2).filter(GradingV2.submission_item_id == submission_item_id).first()
     
     def update_grading(self, grading_id: int, is_correct: bool = None,
-                      confidence: float = None, error_description: str = None,
-                      error_phrases: List[str] = None, partial_credit: bool = None,
-                      teacher_notes: str = None, clarify_notes: str = None) -> bool:
+                      error_description: str = None, error_phrases: List[str] = None,
+                      partial_credit: bool = None, teacher_notes: str = None,
+                      clarify_notes: str = None) -> bool:
         """Update existing grading result"""
         with self.get_session() as session:
             grading = session.query(GradingV2).filter(GradingV2.id == grading_id).first()
@@ -683,8 +682,6 @@ class DatabaseManagerV2:
             
             if is_correct is not None:
                 grading.is_correct = is_correct
-            if confidence is not None:
-                grading.confidence = confidence
             if error_description is not None:
                 grading.error_description = error_description
             if error_phrases is not None:

@@ -16,16 +16,16 @@ from components.grading_interface import GradingInterfaceComponent
 from components.shared_components import render_confirmation_dialog
 
 def show_grading_page():
-    """Page for grading submissions using Vision AI."""
-    st.header("🎯 Grade Student Submissions")
-    st.markdown("Select a student's submission to begin AI-powered grading.")
+    """Trang chấm điểm bài làm sử dụng AI thị giác."""
+    st.header("🎯 Chấm điểm bài làm học sinh")
+    st.markdown("Chọn bài làm của học sinh để bắt đầu chấm điểm bằng AI.")
 
     success, _, submissions_data = SubmissionService.get_all_submissions_with_answers()
 
     if not submissions_data:
-        st.warning("⚠️ No student submissions with mapped answers found.")
-        if st.button("➕ Go to Submissions Page"):
-            app_state.page = "👥 Student Submissions"
+        st.warning("⚠️ Không tìm thấy bài làm học sinh nào có câu trả lời đã ánh xạ.")
+        if st.button("➕ Chuyển đến trang bài làm"):
+            app_state.page = "👥 Bài làm học sinh"
             st.rerun()
         return
 
@@ -60,7 +60,7 @@ def show_grading_page():
 
 
 def display_grading_dashboard(submission_data):
-    """Renders the main grading dashboard for a selected submission."""
+    """Hiển thị bảng điều khiển chấm điểm chính cho bài làm được chọn."""
     submission = submission_data['submission']
     items = submission_data['items']
     
@@ -85,14 +85,14 @@ def display_grading_dashboard(submission_data):
 
     # Handle the batch grading process if triggered
     if app_state.grading_in_progress:
-        with st.spinner("🤖 Executing batch grading... This may take a while."):
+        with st.spinner("🤖 Đang thực hiện chấm điểm hàng loạt... Có thể mất một lút."):
             success, msg, _ = grading_service.grade_submission_batch(submission.id)
             st.toast(msg, icon="✅" if success else "❌")
         app_state.grading_in_progress = False
         st.rerun()
 
     st.divider()
-    st.markdown("### 📝 Individual Question Grading")
+    st.markdown("### 📝 Chấm điểm từng câu hỏi")
 
     # Display each question's grading card
     for item in items:
@@ -106,21 +106,21 @@ def display_grading_dashboard(submission_data):
 
         # Add clarify re-grading workflow for graded items
         if existing_gradings.get(item.id):
-            if st.button("🔄 Re-grade with clarification", key=f"regrade_btn_{item.id}"):
+            if st.button("🔄 Chấm lại với lời giải thích", key=f"regrade_btn_{item.id}"):
                 app_state.regrade_item_id = item.id
                 app_state.regrade_clarify_text = app_state.regrade_clarify_text or ""
 
             if app_state.regrade_item_id == item.id:
                 st.info("Vui lòng nhập Clarify bắt buộc cho lần chấm lại.")
-                clarify = st.text_area("Clarify cho lần chấm lại (bắt buộc)",
+                clarify = st.text_area("Lời giải thích cho lần chấm lại (bắt buộc)",
                                      key=f"clarify_text_{item.id}",
                                      value=app_state.regrade_clarify_text,
                                      help="Ví dụ: Ở bước cuối là y^6, không phải y^8")
                 c1, c2 = st.columns([1,1])
                 with c1:
-                    if st.button("Xác nhận Re-grade", key=f"confirm_regrade_{item.id}"):
+                    if st.button("Xác nhận chấm lại", key=f"confirm_regrade_{item.id}"):
                         if not clarify or not clarify.strip():
-                            st.error("Clarify là bắt buộc.")
+                            st.error("Lời giải thích là bắt buộc.")
                         else:
                             app_state.regrade_clarify_text = clarify.strip()
                             handle_grade_single_with_clarify(item, item.question, app_state.regrade_clarify_text)
@@ -132,27 +132,27 @@ def display_grading_dashboard(submission_data):
                         app_state.regrade_clarify_text = ""
 
 def handle_grade_single(submission_item, question):
-    """Callback to grade a single question."""
-    with st.spinner(f"🤖 Grading Question..."):
+    """Hàm xử lý chấm điểm một câu hỏi."""
+    with st.spinner(f"🤖 Đang chấm điểm câu hỏi..."):
         success, msg, _ = grading_service.grade_single_question(submission_item.id)
         st.toast(msg, icon="✅" if success else "❌")
     st.rerun()
 
 def handle_grade_single_with_clarify(submission_item, question, clarify: str):
-    """Callback to re-grade a single question with teacher clarification."""
-    with st.spinner(f"🤖 Re-grading with clarification..."):
+    """Hàm xử lý chấm lại một câu hỏi với lời giải thích của giáo viên."""
+    with st.spinner(f"🤖 Đang chấm lại với lời giải thích..."):
         success, msg, _ = grading_service.grade_single_question(submission_item.id, clarify=clarify)
         st.toast(msg, icon="✅" if success else "❌")
     st.rerun()
 
 def handle_regrade_all(submission_id):
-    """Callback to re-grade all questions."""
-    with st.spinner("🔄 Re-grading all questions..."):
+    """Hàm xử lý chấm lại tất cả các câu hỏi."""
+    with st.spinner("🔄 Đang chấm lại tất cả các câu hỏi..."):
         success, msg, _ = grading_service.grade_submission_batch(submission_id, force_regrade=True)
         st.toast(msg, icon="✅" if success else "❌")
     st.rerun()
 
 def handle_delete_question(question, question_label):
-    """Callback to initiate question deletion."""
+    """Hàm xử lý khởi tạo việc xóa câu hỏi."""
     app_state.question_to_delete_from_grading = {'id': question.id, 'label': question_label}
     st.rerun()

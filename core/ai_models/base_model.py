@@ -22,7 +22,7 @@ class BaseGradingModel(ABC):
 
         Returns:
             A dictionary containing the grading result, conforming to a standardized format.
-            e.g., {"is_correct": bool, "confidence": float, "error_description": str, ...}
+            e.g., {"is_correct": bool, "critical_errors": list, "part_errors": list, "partial_credit": bool}
         """
         pass
 

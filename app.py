@@ -7,7 +7,7 @@ import sys
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
-from core.config import APP_TITLE, APP_ICON, LAYOUT
+from core.config import APP_TITLE, APP_SUBTITLE, APP_ICON, LAYOUT
 from core.state_manager import app_state  # Use the new state manager
 from pages import (
     show_create_exam_page,
@@ -28,27 +28,28 @@ st.set_page_config(
 def main():
     """Main application entry point"""
     st.title(f"{APP_ICON} {APP_TITLE}")
-    
-    # Define pages configuration
+    st.caption(APP_SUBTITLE)
+
+    # Define pages configuration in Vietnamese
     PAGES = [
-        ("📝 Create Exam", show_create_exam_page),
-        ("✂️ Digitize Exam", show_digitize_exam_page), 
-        ("👥 Student Submissions", show_submissions_page),
-        ("🎯 Grade Submissions", show_grading_page),
-        ("📊 Results & Reports", show_results_page)
+        ("📝 Tạo đề thi", show_create_exam_page),
+        ("✂️ Số hóa đề thi", show_digitize_exam_page),
+        ("👥 Bài làm học sinh", show_submissions_page),
+        ("🎯 Chấm bài", show_grading_page),
+        ("📊 Kết quả & Báo cáo", show_results_page)
     ]
     
     page_names = [name for name, _ in PAGES]
     page_functions = {name: func for name, func in PAGES}
     
-    # Navigation sidebar
+    # Navigation sidebar in Vietnamese
     with st.sidebar:
-        st.header("🗂️ Navigation")
+        st.header("🗂️ Điều hướng")
         # The current page is now managed by our centralized state manager
         current_index = page_names.index(app_state.page) if app_state.page in page_names else 0
-        
+
         selected_page = st.radio(
-            "Choose a section:",
+            "Chọn chức năng:",
             page_names,
             index=current_index
         )

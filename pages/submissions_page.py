@@ -19,7 +19,7 @@ from core.utils import format_question_label
 from database.manager_v2 import db_manager # Import db_manager để truy vấn
 
 def show_submissions_page():
-    """Page for managing student submissions and mapping answers."""
+    """Trang quản lý bài làm học sinh và ánh xạ câu trả lời."""
     
     # Nếu đang ở chế độ ánh xạ, chỉ hiển thị giao diện ánh xạ để tập trung
     if app_state.mapping_mode and app_state.current_submission_id:
@@ -27,23 +27,23 @@ def show_submissions_page():
         return
 
     # --- Giao diện chính khi không ở chế độ ánh xạ ---
-    st.header("👥 Student Submissions")
-    st.markdown("Select an exam to view existing submissions or create a new one.")
+    st.header("👥 Bài làm học sinh")
+    st.markdown("Chọn một đề thi để xem các bài làm hiện tại hoặc tạo bài làm mới.")
 
     # --- 1. Exam Selection (Bước chọn kỳ thi) ---
     exam_success, _, exams = ExamService.get_exam_list()
     if not exams:
-        st.warning("⚠️ No exams found. Please create an exam first.")
+        st.warning("⚠️ Không tìm thấy đề thi nào. Vui lòng tạo đề thi trước.")
         return
 
     selected_exam = render_selection_box(
-        label="Choose an exam:",
+        label="Chọn đề thi:",
         options=exams,
-        format_func=lambda e: f"{e['name']} - {e.get('topic', 'N/A')} (ID: {e['id']})",
+        format_func=lambda e: f"{e['name']} - {e.get('topic', 'Chưa có')} (ID: {e['id']})",
         key="submission_exam_selector"
     )
     if not selected_exam:
-        st.info("Please select an exam to proceed.")
+        st.info("Vui lòng chọn đề thi để tiếp tục.")
         return
 
     selected_exam_id = selected_exam['id']
@@ -51,13 +51,13 @@ def show_submissions_page():
     st.divider()
 
     # --- 2. Display Existing Submissions for the selected exam ---
-    st.subheader(f"📚 Existing Submissions for '{selected_exam['name']}'")
+    st.subheader(f"📚 Các bài làm hiện có cho '{selected_exam['name']}'")
     
     # Lấy các submission đã lọc theo exam_id
     submissions_for_exam = db_manager.list_submissions_by_exam(selected_exam_id)
 
     if not submissions_for_exam:
-        st.info("No submissions have been created for this exam yet. Use the form below to create one.")
+        st.info("Chưa có bài làm nào được tạo cho đề thi này. Sử dụng biểu mẫu bên dưới để tạo một bài làm.")
     else:
         for sub_info in submissions_for_exam:
             sub_id = sub_info['id']
@@ -67,17 +67,17 @@ def show_submissions_page():
             col1, col2, col3 = st.columns([2, 2, 1])
             with col1:
                 st.markdown(f"**🧑‍🎓 {sub_info['student_name']}**")
-                st.caption(f"Submitted on: {sub_info['created_at'].strftime('%Y-%m-%d %H:%M')}")
+                st.caption(f"Nộp lúc: {sub_info['created_at'].strftime('%Y-%m-%d %H:%M')}")
             with col2:
                 # Hiển thị số lượng item đã ánh xạ là đủ ở đây
                 item_count = sub_info['item_count']
-                st.markdown(f"**Mapped Answers:** {item_count}")
+                st.markdown(f"**Câu trả lời đã ánh xạ:** {item_count}")
 
             with col3:
                 # Thêm khoảng trống để căn chỉnh
                 st.markdown("") 
                 st.markdown("")
-                if st.button("📝 Continue Mapping", key=f"map_{sub_id}"):
+                if st.button("📝 Tiếp tục ánh xạ", key=f"map_{sub_id}"):
                     app_state.current_submission_id = sub_id
                     app_state.mapping_mode = True
                     st.rerun()
@@ -85,10 +85,10 @@ def show_submissions_page():
     st.divider()
 
     # --- 3. Create New Submission Section (Form tạo mới) ---
-    with st.expander("📝 Create New Submission for this Exam", expanded=not submissions_for_exam):
-        student_name = st.text_input("Student Name*", placeholder="Nguyễn Văn A", key="new_student_name")
+    with st.expander("📝 Tạo bài làm mới cho đề thi này", expanded=not submissions_for_exam):
+        student_name = st.text_input("Tên học sinh*", placeholder="Nguyễn Văn A", key="new_student_name")
         uploaded_files = st.file_uploader(
-            "Upload Answer Sheet(s)*",
+            "Tải lên bài làm*",
             type=["png", "jpg", "jpeg"],
             accept_multiple_files=True,
             key="new_submission_uploader"
@@ -96,7 +96,7 @@ def show_submissions_page():
         
         # Preview uploaded images
         if uploaded_files:
-            st.markdown("**Image Previews:**")
+            st.markdown("**Xem trước hình ảnh:**")
             cols = st.columns(4)
             for i, uploaded_file in enumerate(uploaded_files):
                 with cols[i % 4]:
@@ -104,9 +104,9 @@ def show_submissions_page():
                         image = Image.open(uploaded_file)
                         st.image(image, caption=uploaded_file.name)
                     except Exception as e:
-                        st.error(f"Failed to preview {uploaded_file.name}: {e}")
+                        st.error(f"Không thể xem trước {uploaded_file.name}: {e}")
 
-        if st.button("🚀 Create Submission", type="primary"):
+        if st.button("🚀 Tạo bài làm", type="primary"):
             success, message, sub_id = SubmissionService.create_submission(
                 exam_id=selected_exam_id,
                 student_name=student_name,
@@ -119,28 +119,28 @@ def show_submissions_page():
                 app_state.mapping_mode = True
                 st.rerun()
             else:
-                st.error(f"❌ Submission failed: {message}")
+                st.error(f"❌ Tạo bài làm thất bại: {message}")
 
 def show_answer_mapping_interface():
-    """Shows the UI for mapping answers for the submission stored in the app state."""
+    """Hiển thị giao diện ánh xạ câu trả lời cho bài làm được lưu trong trạng thái ứng dụng."""
     sub_id = app_state.current_submission_id
     success, msg, progress = SubmissionService.get_submission_progress(sub_id)
 
     if not success or not progress:
-        st.error(f"Error loading submission data: {msg}")
+        st.error(f"Lỗi khi tải dữ liệu bài làm: {msg}")
         # Nút để thoát khỏi chế độ ánh xạ nếu có lỗi
-        if st.button("🔙 Go Back"):
+        if st.button("🔙 Quay lại"):
             app_state.mapping_mode = False
             app_state.current_submission_id = None
             st.rerun()
         return
     
-    st.header("✂️ Answer Mapping")
-    st.info(f"**Mapping for:** {progress['student_name']} | "
-            f"**Exam:** {progress['submission'].exam.name} | "
-            f"**Progress:** {progress['mapped_answers']}/{progress['total_questions']} questions mapped.")
+    st.header("✂️ Ánh xạ câu trả lời")
+    st.info(f"**Ánh xạ cho:** {progress['student_name']} | "
+            f"**Đề thi:** {progress['submission'].exam.name} | "
+            f"**Tiến độ:** {progress['mapped_answers']}/{progress['total_questions']} câu hỏi đã ánh xạ.")
 
-    if st.button("✅ Finish Mapping & Return to List"):
+    if st.button("✅ Hoàn thành ánh xạ & quay lại danh sách"):
         app_state.mapping_mode = False
         app_state.current_submission_id = None
         st.rerun()
@@ -151,7 +151,7 @@ def show_answer_mapping_interface():
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        st.markdown("**Questions to Map**")
+        st.markdown("**Câu hỏi cần ánh xạ**")
         for q in questions:
             is_mapped = q.id in mapped_ids
             status_icon = "✅" if is_mapped else "⏳"
@@ -162,24 +162,24 @@ def show_answer_mapping_interface():
                 st.rerun() # Rerun để cập nhật cột bên phải
     
     with col2:
-        st.markdown("**Crop Student's Answer**")
+        st.markdown("**Cắt câu trả lời học sinh**")
         if app_state.selected_question_for_mapping:
             display_answer_cropping_ui(progress)
         else:
-            st.info("👈 Select a question from the left to map its answer.")
+            st.info("👈 Chọn một câu hỏi ở bên trái để ánh xạ câu trả lời.")
 
 def display_answer_cropping_ui(progress_data):
-    """Renders the answer cropping interface for the selected question."""
+    """Hiển thị giao diện cắt câu trả lời cho câu hỏi được chọn."""
     question_id = app_state.selected_question_for_mapping
     success, msg, question = QuestionService.get_question_by_id(question_id)
     
     if not success or not question:
-        st.error(f"Could not load question data: {msg}")
+        st.error(f"Không thể tải dữ liệu câu hỏi: {msg}")
         return
 
-    st.success(f"Mapping answer for: **{format_question_label(question.order_index, question.part_label)}**")
+    st.success(f"Ánh xạ câu trả lời cho: **{format_question_label(question.order_index, question.part_label)}**")
     
-    with st.expander("Show Question Reference"):
+    with st.expander("Hiển thị câu hỏi tham khảo"):
         # Show all question images
         try:
             question_paths = json.loads(question.question_image_paths or '[]')
@@ -191,11 +191,11 @@ def display_answer_cropping_ui(progress_data):
         if len(question_paths) == 1:
             st.image(question_paths[0])
         else:
-            st.markdown(f"**Question has {len(question_paths)} images:**")
+            st.markdown(f"**Câu hỏi có {len(question_paths)} hình ảnh:**")
             cols = st.columns(min(3, len(question_paths)))
             for i, q_path in enumerate(question_paths):
                 with cols[i % len(cols)]:
-                    st.image(q_path, caption=f"Part {i+1}")
+                    st.image(q_path, caption=f"Phần {i+1}")
 
     try:
         image_paths = json.loads(progress_data['submission'].original_image_paths or '[]')
@@ -203,12 +203,12 @@ def display_answer_cropping_ui(progress_data):
         image_paths = []
 
     if not image_paths:
-        st.error("This submission has no answer sheet images to crop from.")
+        st.error("Bài làm này không có hình ảnh bài làm nào để cắt.")
         return
 
     # Simplified page selection - let Streamlit handle widget state
     selected_page = st.number_input(
-        f"Select page (1 to {len(image_paths)})",
+        f"Chọn trang (1 đến {len(image_paths)})",
         min_value=1, max_value=len(image_paths), 
         value=1,  # Default to page 1
         key=f"page_selector_{question_id}"
@@ -219,8 +219,8 @@ def display_answer_cropping_ui(progress_data):
     img = Image.open(image_paths[page_index])
     cropped_img = st_cropper(img, realtime_update=True, box_color="#FF4B4B", return_type="image", key=f"cropper_{question_id}_{page_index}")
 
-    if cropped_img and st.button("💾 Save Answer Mapping", type="primary"):
-        with st.spinner("Saving..."):
+    if cropped_img and st.button("💾 Lưu ánh xạ câu trả lời", type="primary"):
+        with st.spinner("Đang lưu..."):
             success, message, _ = SubmissionService.create_answer_mapping(
                 submission_id=progress_data['submission_id'],
                 question_id=question_id,
@@ -233,4 +233,4 @@ def display_answer_cropping_ui(progress_data):
                 app_state.selected_question_for_mapping = None # Reset selection
                 st.rerun()
             else:
-                st.error(f"❌ Failed to map answer: {message}")
+                st.error(f"❌ Ánh xạ câu trả lời thất bại: {message}")

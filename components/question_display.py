@@ -12,15 +12,15 @@ sys.path.insert(0, project_root)
 from core.utils import format_question_label
 
 class QuestionDisplayComponent:
-    """Reusable component for displaying questions and grading results consistently."""
+    """Thành phần có thể tái sử dụng để hiển thị câu hỏi và kết quả chấm điểm một cách nhất quán."""
 
     @staticmethod
     def _render_image(image_path: str, caption: str):
-        """Internal helper to render a single image safely."""
+        """Hàm trợ giúp nội bộ để hiển thị một hình ảnh một cách an toàn."""
         if os.path.exists(image_path):
             st.image(image_path, caption=caption)
         else:
-            st.error(f"❌ Image not found: {os.path.basename(image_path)}")
+            st.error(f"❌ Không tìm thấy hình ảnh: {os.path.basename(image_path)}")
 
     @staticmethod
     def render_question_preview(
@@ -29,7 +29,7 @@ class QuestionDisplayComponent:
         question_image_paths: Optional[str] = None,
         has_multiple_images: bool = False
     ):
-        """Renders question image(s) with consistent styling."""
+        """Hiển thị (các) hình ảnh câu hỏi với kiểu dáng nhất quán."""
         # Collect all images: primary + additional paths
         all_images = []
         
@@ -56,13 +56,13 @@ class QuestionDisplayComponent:
         
         # Render all images
         if len(unique_images) > 1:
-            st.caption(f"Question with {len(unique_images)} images:")
+            st.caption(f"Câu hỏi với {len(unique_images)} hình ảnh:")
             for i, path in enumerate(unique_images):
-                QuestionDisplayComponent._render_image(path, caption=f"{question_label} - Image {i+1}")
+                QuestionDisplayComponent._render_image(path, caption=f"{question_label} - Hình {i+1}")
         elif unique_images:
-            QuestionDisplayComponent._render_image(unique_images[0], caption=f"Question {question_label}")
+            QuestionDisplayComponent._render_image(unique_images[0], caption=f"Câu hỏi {question_label}")
         else:
-            st.error(f"No images found for {question_label}")
+            st.error(f"Không tìm thấy hình ảnh cho {question_label}")
 
     @staticmethod
     def render_answer_preview(
@@ -71,7 +71,7 @@ class QuestionDisplayComponent:
         answer_image_paths: Optional[str] = None,
         has_multiple_images: bool = False
     ):
-        """Renders student answer image(s) with consistent styling."""
+        """Hiển thị (các) hình ảnh câu trả lời học sinh với kiểu dáng nhất quán."""
         # Collect all images: primary + additional paths
         all_images = []
         
@@ -98,27 +98,27 @@ class QuestionDisplayComponent:
         
         # Render all images
         if len(unique_images) > 1:
-            st.caption(f"Student answer with {len(unique_images)} images:")
+            st.caption(f"Câu trả lời học sinh với {len(unique_images)} hình ảnh:")
             for i, path in enumerate(unique_images):
-                QuestionDisplayComponent._render_image(path, caption=f"Answer - Image {i+1}")
+                QuestionDisplayComponent._render_image(path, caption=f"Câu trả lời - Hình {i+1}")
         elif unique_images:
             QuestionDisplayComponent._render_image(unique_images[0], caption=answer_label)
         else:
-            st.error(f"No answer images found")
+            st.error(f"Không tìm thấy hình ảnh câu trả lời")
 
     @staticmethod
     def render_grading_summary(grading_result, show_details: bool = True, editable: bool = False):
-        """Renders a detailed summary of a grading result."""
-        st.markdown("**🎯 AI Grading Result**")
+        """Hiển thị tóm tắt chi tiết của kết quả chấm điểm."""
+        st.markdown("**🎯 Kết quả chấm điểm AI**")
         
         # Display main result
         if grading_result.is_correct:
-            st.success("**Result: CORRECT** ✅")
+            st.success("**Kết quả: ĐÚNG** ✅")
         else:
-            st.error("**Result: INCORRECT** ❌")
+            st.error("**Kết quả: SAI** ❌")
         
         if grading_result.partial_credit:
-            st.info("ℹ️ Partial credit was suggested for this answer.")
+            st.info("ℹ️ Được đề xuất chấm điểm một phần cho câu trả lời này.")
 
         # Display new categorized error analysis
         if show_details:
@@ -141,7 +141,7 @@ class QuestionDisplayComponent:
             # Display critical errors (red)
             if critical_errors:
                 with st.container(border=True):
-                    st.markdown("**🔴 Critical Errors (Lỗi chí mạng):**")
+                    st.markdown("**🔴 Lỗi nghiêm trọng (Lỗi chí mạng):**")
                     for error in critical_errors:
                         st.error(f"**{error.get('description', '')}**")
                         if error.get('phrases'):
@@ -151,7 +151,7 @@ class QuestionDisplayComponent:
             # Display part errors (yellow/warning)
             if part_errors:
                 with st.container(border=True):
-                    st.markdown("**🟡 Part Errors (Lỗi nhỏ/Không chắc chắn):**")
+                    st.markdown("**🟡 Lỗi một phần (Lỗi nhỏ/Không chắc chắn):**")
                     for error in part_errors:
                         st.warning(f"**{error.get('description', '')}**")
                         if error.get('phrases'):
@@ -161,14 +161,14 @@ class QuestionDisplayComponent:
             # Fallback to legacy error display if new format not available
             if not critical_errors and not part_errors and grading_result.error_description and grading_result.error_description != "No errors found":
                 with st.container(border=True):
-                    st.markdown("**🔍 Error Analysis (Legacy):**")
+                    st.markdown("**🔍 Phân tích lỗi (Cũ):**")
                     st.warning(grading_result.error_description)
 
                     if hasattr(grading_result, 'error_phrases') and grading_result.error_phrases:
                         try:
                             phrases = json.loads(grading_result.error_phrases)
                             if phrases:
-                                st.markdown("**Key error points:**")
+                                st.markdown("**Các điểm lỗi chính:**")
                                 for phrase in phrases:
                                     st.markdown(f"- {phrase}")
                         except (json.JSONDecodeError, TypeError):

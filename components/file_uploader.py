@@ -7,14 +7,14 @@ from core.config import SUPPORTED_IMAGE_FORMATS, MAX_IMAGE_SIZE_MB
 
 class FileUploaderComponent:
     """
-    A reusable UI component for handling file uploads with validation and previews.
-    This component focuses on rendering widgets and returning user inputs.
+    Thành phần giao diện có thể tái sử dụng để xử lý tải lên tập tin với xác thực và xem trước.
+    Thành phần này tập trung vào hiển thị các widget và trả về dữ liệu đầu vào của người dùng.
     """
 
     @staticmethod
     def _render_image_previews(uploaded_files: List, preview_columns: int):
-        """Renders a grid of image previews."""
-        st.markdown("**Image Previews:**")
+        """Hiển thị lưới xem trước hình ảnh."""
+        st.markdown("**Xem trước hình ảnh:**")
         cols = st.columns(preview_columns)
         for i, uploaded_file in enumerate(uploaded_files):
             with cols[i % preview_columns]:
@@ -22,7 +22,7 @@ class FileUploaderComponent:
                     image = Image.open(uploaded_file)
                     st.image(image, caption=uploaded_file.name)
                 except Exception as e:
-                    st.error(f"Failed to preview {uploaded_file.name}: {e}")
+                    st.error(f"Không thể xem trước {uploaded_file.name}: {e}")
 
     @staticmethod
     def render_image_uploader(
@@ -31,12 +31,12 @@ class FileUploaderComponent:
         key: str = None
     ) -> List:
         """
-        Renders a generic image uploader widget.
-        Validation logic is now primarily handled by the service layer.
+        Hiển thị widget tải lên hình ảnh tổng quát.
+        Logic xác thực hiện tại chủ yếu được xử lý bởi lớp dịch vụ.
         """
         if help_text is None:
-            help_text = (f"Supported formats: {', '.join(SUPPORTED_IMAGE_FORMATS).upper()}. "
-                         f"Max size: {MAX_IMAGE_SIZE_MB}MB per file.")
+            help_text = (f"Định dạng hỗ trợ: {', '.join(SUPPORTED_IMAGE_FORMATS).upper()}. "
+                         f"Kích thước tối đa: {MAX_IMAGE_SIZE_MB}MB mỗi tập tin.")
 
         uploaded_files = st.file_uploader(
             label=label,
@@ -50,35 +50,35 @@ class FileUploaderComponent:
     @staticmethod
     def render_exam_uploader(key_suffix: str) -> Tuple[List, str, str, str]:
         """
-        Renders the specific UI for creating an exam, including metadata inputs.
-        
-        Returns:
-            A tuple containing (uploaded_files, exam_name, topic, grade_level).
+        Hiển thị giao diện cụ thể cho việc tạo đề thi, bao gồm các trường nhập metadata.
+
+        Trả về:
+            Một tuple chứa (uploaded_files, exam_name, topic, grade_level).
         """
-        st.subheader("📋 Exam Information")
+        st.subheader("📋 Thông tin đề thi")
         col1, col2 = st.columns(2)
         with col1:
             exam_name = st.text_input(
-                "Exam Name*",
-                placeholder="e.g., Midterm Exam I",
+                "Tên đề thi*",
+                placeholder="vd: Kiểm tra giữa kỳ I",
                 key=f"exam_name_{key_suffix}"
             )
             topic = st.text_input(
-                "Topic*",
-                placeholder="e.g., Quadratic Equations, Geometry",
+                "Chủ đề*",
+                placeholder="vd: Phương trình bậc hai, Hình học",
                 key=f"topic_{key_suffix}"
             )
         with col2:
             grade_level = st.selectbox(
-                "Grade Level*",
-                options=[f"Grade {i}" for i in range(6, 13)],
-                index=4,  # Default to Grade 10
+                "Khối lớp*",
+                options=[f"Lớp {i}" for i in range(6, 13)],
+                index=4,  # Mặc định là Lớp 10
                 key=f"grade_{key_suffix}"
             )
         
-        st.subheader("📷 Upload Exam Images")
+        st.subheader("📷 Tải lên hình ảnh đề thi")
         uploaded_files = FileUploaderComponent.render_image_uploader(
-            label="Upload one or more pages of the exam paper.*",
+            label="Tải lên một hoặc nhiều trang của đề thi.*",
             key=f"exam_uploader_{key_suffix}"
         )
 

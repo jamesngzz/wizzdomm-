@@ -17,28 +17,28 @@ from components.canvas_helper import CanvasHelper
 
 def show_results_page():
     """
-    Page for viewing overall results and generating reports.
-    Step 2: Interactive canvas for visual feedback.
+    Trang xem kết quả tổng thể và tạo báo cáo.
+    Bước 2: Canvas tương tác cho phản hồi trực quan.
     """
-    st.header("📊 Results & Reports")
-    st.markdown("Review the AI results and provide visual feedback by dragging annotations onto the answer sheet.")
+    st.header("📊 Kết quả & Báo cáo")
+    st.markdown("Xem xét kết quả AI và cung cấp phản hồi trực quan bằng cách kéo chú thích lên bài làm.")
 
     sub_success, _, submissions = SubmissionService.get_all_submissions_with_answers()
     
     if not submissions:
-        st.warning("⚠️ No graded submissions found. Please grade a submission first.")
+        st.warning("⚠️ Không tìm thấy bài làm đã chấm điểm. Vui lòng chấm điểm bài làm trước.")
         return
 
-    st.subheader("📋 Select a Submission to Review")
+    st.subheader("📋 Chọn bài làm để xem xét")
     selected_submission_data = render_selection_box(
-        label="Choose a submission:",
+        label="Chọn bài làm:",
         options=submissions,
         format_func=lambda s: f"{s['submission'].student_name} - {s['exam_name']} (ID: {s['submission'].id})",
         key="results_submission_selector"
     )
 
     if not selected_submission_data:
-        st.info("Select a submission from the dropdown above to see the results.")
+        st.info("Chọn bài làm từ danh sách trên để xem kết quả.")
         return
 
     st.divider()
@@ -47,27 +47,27 @@ def show_results_page():
     results_data = results_service.get_results_for_submission(submission_id)
     
     if not results_data:
-        st.error("Could not load results for this submission.")
+        st.error("Không thể tải kết quả cho bài làm này.")
         return
         
-    st.header(f"Results for: {results_data['student_name']}")
-    st.caption(f"Exam: {results_data['exam_name']}")
+    st.header(f"Kết quả cho: {results_data['student_name']}")
+    st.caption(f"Đề thi: {results_data['exam_name']}")
 
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        st.subheader("✍️ Visual Feedback Canvas")
+        st.subheader("✍️ Canvas phản hồi trực quan")
         image_paths = results_data['submission_image_paths']
         
         if not image_paths:
-            st.warning("No answer sheet images found for this submission.")
+            st.warning("Không tìm thấy hình ảnh bài làm cho bài nộp này.")
         else:
             # Initialize page_index at module scope to avoid scoping issues
             page_index = 0
             if len(image_paths) > 1:
                 page_selection = st.selectbox(
-                    "Select page to annotate:", 
-                    options=[f"Page {i+1}" for i in range(len(image_paths))],
+                    "Chọn trang để chú thích:", 
+                    options=[f"Trang {i+1}" for i in range(len(image_paths))],
                     key=f"page_select_{submission_id}"
                 )
                 page_index = int(page_selection.split(" ")[1]) - 1
@@ -75,11 +75,11 @@ def show_results_page():
             try:
                 bg_image = Image.open(image_paths[page_index]).convert("RGBA")
             except FileNotFoundError:
-                st.error(f"Image not found at path: {image_paths[page_index]}")
+                st.error(f"Không tìm thấy hình ảnh tại đường dẫn: {image_paths[page_index]}")
                 return
 
             # Add circle count control
-            circle_count = st.slider("Number of circles to add:", min_value=0, max_value=15, value=0, step=1)
+            circle_count = st.slider("Số hình tròn cần thêm:", min_value=0, max_value=15, value=0, step=1)
             
             initial_drawing = CanvasHelper.generate_initial_drawing(
                 graded_items=results_data['graded_items'],
@@ -87,7 +87,7 @@ def show_results_page():
                 circle_count=circle_count
             )
 
-            st.info("Drag and drop the colored boxes to the correct positions on the answer sheet.")
+            st.info("Kéo và thả các hộp màu vào vị trí đúng trên bài làm.")
             # Scale image to fit container while maintaining aspect ratio
             max_width = 500  # Maximum width for better viewing
             scale_factor = min(max_width / bg_image.width, 1.0)  # Don't upscale
@@ -110,7 +110,7 @@ def show_results_page():
         page_index = 0
         
     with col2:
-        st.subheader("🎯 Grading Summary")
+        st.subheader("🎯 Tóm tắt chấm điểm")
         graded_items = results_data['graded_items']
         
         # Filter items for current page (supports multi-page items)
@@ -121,10 +121,10 @@ def show_results_page():
                 items_for_current_page.append(item)
         
         if not graded_items:
-            st.info("This submission has not been graded yet.")
+            st.info("Bài làm này chưa được chấm điểm.")
         elif not items_for_current_page:
             # Fallback: show all items with page indicators when no items found for current page
-            st.info(f"No graded questions found for page {page_index + 1}. Showing all questions with page indicators:")
+            st.info(f"Không tìm thấy câu hỏi đã chấm cho trang {page_index + 1}. Hiển thị tất cả câu hỏi với chỉ báo trang:")
             items_to_show = graded_items
         else:
             items_to_show = items_for_current_page
@@ -137,23 +137,20 @@ def show_results_page():
                     source_page_indices = item.get('source_page_indices', [item.get('source_page_index', 0)])
                     if len(source_page_indices) > 1:
                         pages_str = ', '.join([str(p + 1) for p in source_page_indices])
-                        st.markdown(f"**{item['question_label']}** (spans pages: {pages_str})")
+                        st.markdown(f"**{item['question_label']}** (trải dài nhiều trang: {pages_str})")
                     elif 'items_for_current_page' in locals() and not items_for_current_page:
-                        st.markdown(f"**{item['question_label']}** (from page {source_page_indices[0] + 1})")
+                        st.markdown(f"**{item['question_label']}** (từ trang {source_page_indices[0] + 1})")
                     else:
                         st.markdown(f"**{item['question_label']}**")
                     
                     # Main result
                     if item['is_correct']:
-                        st.success("**Result: CORRECT** ✅")
+                        st.success("**Kết quả: ĐÚNG** ✅")
                     else:
-                        st.error("**Result: INCORRECT** ❌")
-                    
-                    if item['confidence']:
-                        st.metric("AI Confidence", f"{item['confidence']:.1%}")
-                    
+                        st.error("**Kết quả: SAI** ❌")
+
                     if item['partial_credit']:
-                        st.info("ℹ️ Partial credit was suggested for this answer.")
+                        st.info("ℹ️ Được đề xuất chấm điểm một phần cho câu trả lời này.")
                     
                     # ADD DETAILED EXPLANATIONS HERE (like B4)
                     if not item['is_correct']:
@@ -177,7 +174,7 @@ def show_results_page():
                         # Display critical errors (red)
                         if critical_errors:
                             with st.container(border=True):
-                                st.markdown("**🔴 Critical Errors (Lỗi chí mạng):**")
+                                st.markdown("**🔴 Lỗi nghiêm trọng (Lỗi chí mạng):**")
                                 for error in critical_errors:
                                     st.error(f"**{error.get('description', '')}**")
                                     if error.get('phrases'):
@@ -187,7 +184,7 @@ def show_results_page():
                         # Display part errors (yellow/warning)
                         if part_errors:
                             with st.container(border=True):
-                                st.markdown("**🟡 Part Errors (Lỗi nhỏ/Không chắc chắn):**")
+                                st.markdown("**🟡 Lỗi một phần (Lỗi nhỏ/Không chắc chắn):**")
                                 for error in part_errors:
                                     st.warning(f"**{error.get('description', '')}**")
                                     if error.get('phrases'):
@@ -197,10 +194,10 @@ def show_results_page():
                         # Fallback to legacy error display
                         if not critical_errors and not part_errors and item['error_description']:
                             with st.container(border=True):
-                                st.markdown("**🔍 Error Analysis:**")
+                                st.markdown("**🔍 Phân tích lỗi:**")
                                 st.warning(item['error_description'])
                                 if item['error_phrases']:
-                                    st.markdown("**Key error points:**")
+                                    st.markdown("**Các điểm lỗi chính:**")
                                     for phrase in item['error_phrases']:
                                         st.markdown(f"- {phrase}")
         

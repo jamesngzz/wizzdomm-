@@ -25,7 +25,7 @@ class AppState:
     def _get_initial_state(self) -> Dict[str, Any]:
         """Defines the initial state of the application."""
         return {
-            "page": "📝 Create Exam",
+            "page": "📝 Tạo đề thi",
             "current_exam_id": None,
             "current_submission_id": None,
             "selected_exam_details": None,
@@ -38,6 +38,11 @@ class AppState:
             "question_to_delete_from_grading": None,
             "regrade_item_id": None,
             "regrade_clarify_text": "",
+
+            # Modal-related state
+            "active_modal": None,
+            "modal_data": {},
+            "show_batch_clear_modal": False,
         }
 
     # With the new __init__, we no longer need to override __getattr__ and __setattr__

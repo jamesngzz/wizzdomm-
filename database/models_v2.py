@@ -85,7 +85,6 @@ class GradingV2(Base):
     question_id = Column(Integer, ForeignKey("v2_questions.id"), nullable=False)
 
     is_correct = Column(Boolean, nullable=False)
-    confidence = Column(Float, nullable=True)
 
     error_description = Column(String, nullable=True)  # Legacy field for backward compatibility
     error_phrases = Column(String, nullable=True)  # Legacy field for backward compatibility

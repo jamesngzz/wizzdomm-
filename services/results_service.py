@@ -49,7 +49,6 @@ class ResultsService:
                     "source_page_index": source_page_indices[0] if source_page_indices else 0,  # Backward compatibility
                     "question_label": format_question_label(question.order_index, question.part_label),
                     "is_correct": grading.is_correct,
-                    "confidence": grading.confidence,
                     "error_description": grading.error_description,
                     "partial_credit": grading.partial_credit,
                     "error_phrases": error_phrases,

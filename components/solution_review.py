@@ -11,6 +11,7 @@ sys.path.insert(0, project_root)
 
 from services.question_solver_service import question_solver_service
 from database.manager_v2 import db_manager
+from components.shared_components import render_batch_delete_modal
 
 class SolutionReviewComponent:
     """Component for reviewing and approving AI-generated question solutions."""
@@ -350,18 +351,39 @@ class SolutionReviewComponent:
 
         with col3:
             if st.button("🗑️ Xóa tất cả lời giải", key="batch_clear_all"):
-                if st.session_state.get('confirm_batch_clear', False):
-                    success_count = 0
-                    for question_id in question_ids:
-                        success = db_manager.clear_question_solution(question_id)
-                        if success:
-                            success_count += 1
+                st.session_state['show_batch_clear_modal'] = True
+                st.rerun()
 
-                    if success_count > 0:
-                        st.info(f"🗑️ Đã xóa {success_count}/{len(question_ids)} lời giải")
-                        st.session_state['confirm_batch_clear'] = False
-                    else:
-                        st.error("❌ Không thể xóa lời giải nào")
+        # Batch Clear Modal
+        if st.session_state.get('show_batch_clear_modal', False):
+            def confirm_batch_clear():
+                success_count = 0
+                for question_id in question_ids:
+                    success = db_manager.clear_question_solution(question_id)
+                    if success:
+                        success_count += 1
+
+                if success_count > 0:
+                    st.success(f"🗑️ Đã xóa {success_count}/{len(question_ids)} lời giải")
                 else:
-                    st.session_state['confirm_batch_clear'] = True
-                    st.warning("⚠️ Nhấn lại để xác nhận xóa tất cả lời giải")
+                    st.error("❌ Không thể xóa lời giải nào")
+
+                st.session_state['show_batch_clear_modal'] = False
+                st.rerun()
+
+            def cancel_batch_clear():
+                st.session_state['show_batch_clear_modal'] = False
+                st.rerun()
+
+            modal_active = render_batch_delete_modal(
+                items_count=len(question_ids),
+                item_type="AI solutions",
+                on_confirm=confirm_batch_clear,
+                on_cancel=cancel_batch_clear,
+                modal_key="batch_clear_solutions",
+                additional_info="This will clear all AI-generated solutions but keep the questions intact. You can regenerate solutions later."
+            )
+
+            # Stop rendering rest of component while modal is active
+            if modal_active:
+                return
