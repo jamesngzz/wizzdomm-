@@ -44,10 +44,12 @@ def render_confirmation_dialog(
     on_confirm: Callable,
     on_cancel: Callable,
     dialog_key: str,
-    warning_text: str = ""
+    warning_text: str = "",
+    item_type: str = "item",
+    show_skip_option: bool = True
 ):
     """
-    Renders a generic confirmation dialog for destructive actions like deletion.
+    Renders an enhanced confirmation dialog for destructive actions like deletion.
 
     Args:
         item_name: The name of the item to be acted upon (e.g., "Question 1a").
@@ -55,57 +57,79 @@ def render_confirmation_dialog(
         on_cancel: The callback function to execute when the user cancels.
         dialog_key: A unique base key for the dialog's buttons to avoid conflicts.
         warning_text: Optional additional text to display in the warning.
+        item_type: Type of item for skip confirmation grouping (e.g., "question", "exam").
+        show_skip_option: Whether to show "don't ask again" option.
     """
-    with st.container(border=True):
-        st.warning(f"⚠️ **Xác nhận hành động**")
-        st.markdown(f"Bạn có chắc chắn muốn xóa vĩnh viễn **{item_name}**?")
+    # Check if skip confirmation is enabled for this user
+    skip_key = f"skip_delete_confirmation_{item_type}"
+    if st.session_state.get(skip_key, False):
+        # User has opted to skip confirmations for this type
+        if on_confirm:
+            on_confirm()
+        return
 
-        default_warning = "Hành động này không thể hoàn tác và sẽ xóa tất cả dữ liệu liên quan, bao gồm câu trả lời và điểm số của học sinh cho mục này."
-        st.markdown(warning_text if warning_text else default_warning)
-        
-        col1, col2, _ = st.columns([1, 1, 3])
+    # Enhanced visual design
+    st.error("🚨 **XÁC NHẬN XÓA**")
+
+    with st.container(border=True):
+        st.markdown(f"### Bạn có chắc chắn muốn xóa: **{item_name}**?")
+
+        if warning_text:
+            st.warning(f"⚠️ **Cảnh báo:** {warning_text}")
+        else:
+            st.warning("⚠️ **Cảnh báo:** Hành động này không thể hoàn tác và sẽ xóa tất cả dữ liệu liên quan, bao gồm câu trả lời và điểm số của học sinh cho mục này.")
+
+        st.markdown("---")
+
+        # Skip confirmation option
+        if show_skip_option:
+            skip_future = st.checkbox(
+                f"✅ Không hỏi lại khi xóa {item_type}",
+                key=f"{dialog_key}_skip_future",
+                help=f"Bỏ qua hộp thoại xác nhận khi xóa {item_type} trong phiên này"
+            )
+
+        col1, col2, col3 = st.columns([2, 1, 1])
+
         with col1:
-            if st.button("❌ Xác nhận xóa", type="primary", key=f"confirm_{dialog_key}"):
+            st.markdown("**Nhấn một trong hai nút bên phải để tiếp tục:**")
+
+        with col2:
+            if st.button("❌ **XÁC NHẬN XÓA**", type="primary", key=f"confirm_{dialog_key}", use_container_width=True):
+                # Handle skip future confirmations
+                if show_skip_option and st.session_state.get(f"{dialog_key}_skip_future", False):
+                    st.session_state[skip_key] = True
+
                 on_confirm()
                 # Rerunning is handled by the calling page to allow for toast/success messages
-        with col2:
-            if st.button("Hủy", key=f"cancel_{dialog_key}"):
+
+        with col3:
+            if st.button("↩️ Hủy", key=f"cancel_{dialog_key}", use_container_width=True):
                 on_cancel()
-                st.rerun()
 
-def render_delete_modal(
-    item_name: str,
-    item_type: str = "item",
-    on_confirm: Callable = None,
-    on_cancel: Callable = None,
-    modal_key: str = None,
-    warning_text: str = "",
-    show_skip_option: bool = True
-) -> bool:
-    """
-    Modern modal-based delete confirmation with skip option.
-
-    Args:
-        item_name: Name of item to delete (e.g., "Question 1a")
-        item_type: Type of item for skip confirmation grouping
-        on_confirm: Callback when user confirms deletion
-        on_cancel: Callback when user cancels
-        modal_key: Unique key for the modal
-        warning_text: Additional warning text
-        show_skip_option: Whether to show "don't ask again" option
-
-    Returns:
-        bool: True if modal is active and showing
-    """
-    return ModalManager.render_delete_confirmation_modal(
-        item_name=item_name,
-        item_type=item_type,
-        on_confirm=on_confirm,
-        on_cancel=on_cancel,
-        modal_key=modal_key,
-        warning_text=warning_text,
-        show_skip_option=show_skip_option
-    )
+# DEPRECATED: Modal functions disabled - using simple confirmation dialogs instead
+# def render_delete_modal(
+#     item_name: str,
+#     item_type: str = "item",
+#     on_confirm: Callable = None,
+#     on_cancel: Callable = None,
+#     modal_key: str = None,
+#     warning_text: str = "",
+#     show_skip_option: bool = True
+# ) -> bool:
+#     """
+#     DEPRECATED: Use render_confirmation_dialog instead.
+#     Modern modal-based delete confirmation with skip option.
+#     """
+#     return ModalManager.render_delete_confirmation_modal(
+#         item_name=item_name,
+#         item_type=item_type,
+#         on_confirm=on_confirm,
+#         on_cancel=on_cancel,
+#         modal_key=modal_key,
+#         warning_text=warning_text,
+#         show_skip_option=show_skip_option
+#     )
 
 def render_batch_delete_modal(
     items_count: int,
@@ -117,6 +141,7 @@ def render_batch_delete_modal(
 ) -> bool:
     """
     Modal for batch delete operations.
+    Note: Individual deletes use render_confirmation_dialog instead.
 
     Args:
         items_count: Number of items to be deleted
@@ -137,3 +162,10 @@ def render_batch_delete_modal(
         modal_key=modal_key,
         additional_info=additional_info
     )
+
+def clear_skip_confirmations():
+    """Clear all skip confirmation preferences for the session"""
+    keys_to_remove = [key for key in st.session_state.keys() if key.startswith("skip_delete_confirmation_")]
+    for key in keys_to_remove:
+        del st.session_state[key]
+    st.success("🔄 Đã đặt lại tùy chọn xác nhận xóa!")

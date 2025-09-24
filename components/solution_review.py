@@ -17,6 +17,15 @@ class SolutionReviewComponent:
     """Component for reviewing and approving AI-generated question solutions."""
 
     @staticmethod
+    def _render_content(content: str, title: str = "") -> None:
+        """Render content with LaTeX support (simplified approach)"""
+        if title:
+            st.markdown(f"**{title}**")
+
+        # Simple approach: st.markdown handles LaTeX automatically
+        st.markdown(content)
+
+    @staticmethod
     def render_solution_display(solution_data: Dict[str, Any], question_id: int = None) -> None:
         """
         Display a solution with answer, steps, and points in a formatted way.
@@ -41,23 +50,34 @@ class SolutionReviewComponent:
             else:
                 st.warning("⏳ Chờ duyệt")
 
-        # Display answer
+        # Display answer with simple approach
         st.markdown("### 📝 **Đáp Án:**")
         answer = solution_data.get('answer', 'Không có đáp án')
-        st.markdown(f"<div style='background-color: #f0f8ff; padding: 10px; border-radius: 5px; border-left: 4px solid #1f77b4;'><h4>{answer}</h4></div>", unsafe_allow_html=True)
 
-        # Display solution steps
+        # Simple styled container with LaTeX support
+        st.info(f"**{answer}**")
+
+        # Display solution steps with enhanced formatting
         steps = solution_data.get('steps', [])
         if steps:
             st.markdown("### 🔢 **Các Bước Giải:**")
+
+            # Show overview if there are many steps
+            if len(steps) > 3:
+                with st.expander(f"📋 Tổng quan ({len(steps)} bước)", expanded=False):
+                    for i, step in enumerate(steps, 1):
+                        st.markdown(f"**Bước {i}:** {step.get('description', f'Bước {i}')} *({step.get('points', 0)} điểm)*")
 
             total_points = 0
             for i, step in enumerate(steps, 1):
                 step_points = step.get('points', 0)
                 total_points += step_points
+                step_description = step.get('description', f'Bước {i}')
+                step_content = step.get('content', 'Không có nội dung')
 
-                with st.expander(f"**Bước {i}** - {step.get('description', f'Bước {i}')} *({step_points} điểm)*", expanded=i <= 2):
-                    st.markdown(f"**Nội dung:** {step.get('content', 'Không có nội dung')}")
+                with st.expander(f"**Bước {i}** - {step_description} *({step_points} điểm)*", expanded=i <= 2):
+                    # Simple content display with LaTeX support
+                    SolutionReviewComponent._render_content(step_content, "📋 Nội dung:")
 
             # Display total points
             expected_total = solution_data.get('total_points', total_points)

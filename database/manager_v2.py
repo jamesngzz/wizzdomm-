@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from typing import List, Optional, Dict, Any, Union
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session, joinedload
@@ -7,6 +8,8 @@ from contextlib import contextmanager
 from datetime import datetime
 
 from .models_v2 import Base, ExamV2, QuestionV2, SubmissionV2, SubmissionItemV2, GradingV2
+
+logger = logging.getLogger(__name__)
 
 class DatabaseManagerV2:
     def __init__(self, database_url: str = None):
@@ -84,6 +87,15 @@ class DatabaseManagerV2:
                 
                 if 'has_multiple_images' not in submission_item_columns:
                     session.execute(text("ALTER TABLE v2_submission_items ADD COLUMN has_multiple_images BOOLEAN DEFAULT 0"))
+                    session.commit()
+
+                # Add bounding box columns for precise canvas positioning
+                if 'answer_bbox_coordinates' not in submission_item_columns:
+                    session.execute(text("ALTER TABLE v2_submission_items ADD COLUMN answer_bbox_coordinates TEXT"))
+                    session.commit()
+
+                if 'original_image_dimensions' not in submission_item_columns:
+                    session.execute(text("ALTER TABLE v2_submission_items ADD COLUMN original_image_dimensions TEXT"))
                     session.commit()
                 
                 # Migrate source_page_index from INTEGER to TEXT (JSON array support)
@@ -453,22 +465,26 @@ class DatabaseManagerV2:
     
     # ============ SUBMISSION ITEM OPERATIONS ============
     
-    def create_submission_item(self, submission_id: int, question_id: int, 
+    def create_submission_item(self, submission_id: int, question_id: int,
                               answer_image_path: str, source_page_indices: Union[int, List[int]], # --- UPDATED ---
                               answer_image_paths: List[str] = None,
-                              has_multiple_images: bool = False) -> int:
+                              has_multiple_images: bool = False,
+                              bbox_coordinates: Dict = None,
+                              original_dimensions: Dict = None) -> int:
         """Create a new submission item and return its ID"""
         with self.get_session() as session:
             existing_item = (session.query(SubmissionItemV2)
                            .filter(SubmissionItemV2.submission_id == submission_id)
                            .filter(SubmissionItemV2.question_id == question_id)
                            .first())
-            
+
             if existing_item:
                 existing_item.answer_image_path = answer_image_path
                 existing_item.answer_image_paths = json.dumps(answer_image_paths or [])
                 existing_item.has_multiple_images = has_multiple_images
                 existing_item.source_page_index = self.encode_source_page_indices(source_page_indices)
+                existing_item.answer_bbox_coordinates = json.dumps(bbox_coordinates) if bbox_coordinates else None
+                existing_item.original_image_dimensions = json.dumps(original_dimensions) if original_dimensions else None
                 session.commit()
                 return existing_item.id
             else:
@@ -478,7 +494,9 @@ class DatabaseManagerV2:
                     source_page_index=self.encode_source_page_indices(source_page_indices), # --- UPDATED ---
                     answer_image_path=answer_image_path,
                     answer_image_paths=json.dumps(answer_image_paths or []),
-                    has_multiple_images=has_multiple_images
+                    has_multiple_images=has_multiple_images,
+                    answer_bbox_coordinates=json.dumps(bbox_coordinates) if bbox_coordinates else None,
+                    original_image_dimensions=json.dumps(original_dimensions) if original_dimensions else None
                 )
                 session.add(item)
                 session.commit()
@@ -529,6 +547,53 @@ class DatabaseManagerV2:
                    .options(joinedload(SubmissionItemV2.grading))
                    .filter(SubmissionItemV2.id == item_id)
                    .first())
+
+    def get_submission_items_by_question(self, submission_id: int, question_id: int) -> List[SubmissionItemV2]:
+        """Get submission items for a specific question in a submission"""
+        with self.get_session() as session:
+            return (session.query(SubmissionItemV2)
+                   .options(joinedload(SubmissionItemV2.question))
+                   .options(joinedload(SubmissionItemV2.grading))
+                   .filter(SubmissionItemV2.submission_id == submission_id)
+                   .filter(SubmissionItemV2.question_id == question_id)
+                   .all())
+
+    def delete_submission_item(self, item_id: int) -> bool:
+        """Delete a submission item and its associated files"""
+        try:
+            with self.get_session() as session:
+                item = session.query(SubmissionItemV2).filter(SubmissionItemV2.id == item_id).first()
+                if not item:
+                    return False
+
+                # Delete associated image files
+                files_to_delete = []
+                if item.answer_image_path:
+                    files_to_delete.append(item.answer_image_path)
+
+                if item.answer_image_paths:
+                    try:
+                        additional_paths = json.loads(item.answer_image_paths)
+                        files_to_delete.extend(additional_paths)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                # Delete files from filesystem
+                for file_path in files_to_delete:
+                    try:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                    except Exception as e:
+                        logger.warning(f"Could not delete file {file_path}: {e}")
+
+                # Delete from database (cascade will handle gradings)
+                session.delete(item)
+                session.commit()
+                return True
+
+        except Exception as e:
+            logger.error(f"Error deleting submission item {item_id}: {e}")
+            return False
     
     # ============ GRADING OPERATIONS ============
     

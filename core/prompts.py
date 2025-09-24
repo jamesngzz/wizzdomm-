@@ -133,16 +133,15 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
     {
       "step_number": 1,
       "description": "Mô tả ngắn gọn",
-      "content": "Nội dung cụ thể của bước",
+      "content": "Nội dung với LaTeX format. VD: Giải phương trình $ax^2 + bx + c = 0$ ta có: $$\\Delta = b^2 - 4ac$$",
       "points": 0.5
     },
     {
       "step_number": 2,
       "description": "Mô tả ngắn gọn",
-      "content": "Nội dung cụ thể của bước",
+      "content": "Tiếp tục với LaTeX. VD: Do $\\Delta > 0$ nên phương trình có 2 nghiệm phân biệt: $$x_{1,2} = \\frac{-b \\pm \\sqrt{\\Delta}}{2a}$$",
       "points": 1.5
-    },
-    ...
+    }
   ],
   "total_points": 2.0
 }
@@ -150,7 +149,8 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
 
 **LƯU Ý QUAN TRỌNG:**
 - Nội dung phải bằng tiếng Việt
-- Các công thức toán học dùng ký hiệu chuẩn (x², √, ∫, ∑, etc.)
+- **QUAN TRỌNG**: Tất cả công thức toán học PHẢI được viết bằng LaTeX format:
+- **VÍ DỤ CHUẨN**: "Thay vào công thức: $S = \\frac{1}{2} \\times a \\times h = \\frac{1}{2} \\times 6 \\times 4 = 12$"
 - Mỗi bước phải logic và dễ hiểu
 - `total_points`: Sử dụng điểm số tìm thấy trong ảnh câu hỏi (mặc định 1.0 nếu không tìm thấy)
 - Tổng điểm của tất cả các bước phải bằng total_points

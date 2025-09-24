@@ -143,7 +143,7 @@ class OpenAISolver:
         logger.info(f"Starting batch solving for {len(questions_data)} questions")
 
         # Limit concurrent requests to avoid API rate limits
-        semaphore = asyncio.Semaphore(3)  # Max 3 concurrent requests for GPT-5 Mini
+        semaphore = asyncio.Semaphore(10)  # Max 10 concurrent requests for GPT-5 Mini
 
         async def solve_single_question(question_data):
             async with semaphore:

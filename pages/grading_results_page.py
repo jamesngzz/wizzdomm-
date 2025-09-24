@@ -16,8 +16,7 @@ from services.submission_service import SubmissionService
 from services.grading_service import grading_service
 from services.results_service import results_service
 from services.question_service import QuestionService
-from components.grading_interface import GradingInterfaceComponent
-from components.shared_components import render_selection_box, render_confirmation_dialog
+from components.shared_components import render_selection_box
 from components.canvas_helper import CanvasHelper
 from core.utils import format_question_label
 
@@ -68,11 +67,11 @@ def show_grading_results_page():
 
             with col_canvas:
                 # Visual Feedback Canvas (from results_page.py)
-                render_visual_feedback_canvas(results_data, submission.id)
+                current_page_index = render_visual_feedback_canvas(results_data, submission.id)
 
             with col_cards:
-                # Enhanced Question Cards with Regrade
-                render_enhanced_question_cards(items, existing_gradings)
+                # Enhanced Question Cards with Regrade - now filtered by current page
+                render_enhanced_question_cards(items, existing_gradings, current_page_index)
         else:
             st.error("Không thể tải dữ liệu kết quả.")
     else:
@@ -168,7 +167,7 @@ def render_visual_feedback_canvas(results_data, submission_id):
 
     if not image_paths:
         st.warning("Không tìm thấy hình ảnh bài làm cho bài nộp này.")
-        return
+        return 0  # Return default page index
 
     # Page selection for multi-page submissions
     page_index = 0
@@ -215,12 +214,51 @@ def render_visual_feedback_canvas(results_data, submission_id):
         key=f"canvas_{submission_id}_{page_index}"
     )
 
-def render_enhanced_question_cards(items, existing_gradings):
+    # Return current page index for sidebar filtering
+    return page_index
+
+def render_enhanced_question_cards(items, existing_gradings, current_page_index=None):
     """Render enhanced question cards with individual regrade functionality (optimized for sidebar)."""
-    st.markdown("#### 📝 Chi tiết chấm điểm từng câu")
+
+    # Filter items by current page if page_index is provided
+    if current_page_index is not None:
+        filtered_items = []
+        for item in items:
+            # Check if this item has answer on current page
+            try:
+                source_page_index = item.source_page_index
+                if source_page_index.isdigit():
+                    # Single page format
+                    if int(source_page_index) == current_page_index:
+                        filtered_items.append(item)
+                else:
+                    # JSON array format - parse and check
+                    page_indices = json.loads(source_page_index)
+                    if current_page_index in page_indices:
+                        filtered_items.append(item)
+            except (ValueError, json.JSONDecodeError, AttributeError):
+                # If can't parse, include by default for backward compatibility
+                filtered_items.append(item)
+
+        items_to_render = filtered_items
+
+        # Update header with page info and filtering status
+        total_questions = len(items)
+        page_questions = len(items_to_render)
+        st.markdown(f"#### 📝 Chi tiết chấm điểm - Trang {current_page_index + 1}")
+        st.caption(f"Hiển thị {page_questions}/{total_questions} câu hỏi có bài làm ở trang này")
+
+        # Show empty state if no questions on this page
+        if not items_to_render:
+            st.info(f"📄 Không có câu hỏi nào được làm ở trang {current_page_index + 1}")
+            st.caption("💡 Hãy chọn trang khác hoặc kiểm tra xem có câu hỏi nào đã được crop chưa")
+            return
+    else:
+        items_to_render = items
+        st.markdown("#### 📝 Chi tiết chấm điểm từng câu")
 
     # Add container for question cards (scrollable by default in sidebar)
-    for item in items:
+    for item in items_to_render:
         grading = existing_gradings.get(item.id)
 
         if not grading:
@@ -331,7 +369,7 @@ def handle_regrade_single_question(item, clarify_text):
 def handle_grade_all_questions(submission_id, items):
     """Handle grading all questions for a submission."""
     with st.spinner(f"🤖 Đang chấm {len(items)} câu hỏi..."):
-        success, msg, results = grading_service.grade_submission(submission_id)
+        success, msg, results = grading_service.grade_submission_batch(submission_id)
         st.toast(msg, icon="✅" if success else "❌")
 
         if success:

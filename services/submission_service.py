@@ -1,6 +1,7 @@
 # services/submission_service.py
 import os
 import sys
+import json
 from typing import List, Tuple, Optional
 from PIL import Image
 
@@ -67,7 +68,9 @@ class SubmissionService:
         question_id: int,
         cropped_images: List[Image.Image],
         student_name: str,
-        source_page_index: int
+        source_page_index: int,
+        bbox_coordinates: dict = None,
+        original_dimensions: dict = None
     ) -> Tuple[bool, str, Optional[int]]:
         """
         Creates a mapping between a question and a cropped answer image.
@@ -82,7 +85,7 @@ class SubmissionService:
 
             # Check if submission item already exists
             existing_item = db_manager.find_submission_item(submission_id, question_id)
-            
+
             if existing_item:
                 # Add images to existing submission item
                 img_success, img_message, image_paths = ImageService.save_answer_images(
@@ -93,7 +96,7 @@ class SubmissionService:
                 )
                 if not img_success:
                     return False, f"Failed to save answer image: {img_message}", None
-                
+
                 # Update existing item with new images
                 update_success = db_manager.update_submission_item_images(submission_id, question_id, image_paths)
                 if update_success:
@@ -115,11 +118,13 @@ class SubmissionService:
                     submission_id=submission_id,
                     question_id=question_id,
                     answer_image_path=image_paths[0],
-                    source_page_indices=source_page_index,  # Updated parameter name
+                    source_page_indices=source_page_index,
                     answer_image_paths=image_paths if len(image_paths) > 1 else None,
-                    has_multiple_images=len(image_paths) > 1
+                    has_multiple_images=len(image_paths) > 1,
+                    bbox_coordinates=bbox_coordinates,
+                    original_dimensions=original_dimensions
                 )
-                
+
                 if item_id:
                     return True, "Answer mapped successfully.", item_id
                 else:

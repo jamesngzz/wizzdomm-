@@ -15,7 +15,7 @@ from core.state_manager import app_state
 from services.exam_service import ExamService
 from services.question_service import QuestionService
 from services.question_solver_service import question_solver_service
-from components.shared_components import render_selection_box, render_confirmation_dialog, render_delete_modal
+from components.shared_components import render_selection_box, render_confirmation_dialog
 from components.solution_review import SolutionReviewComponent
 from core.utils import format_question_label
 import asyncio
@@ -48,33 +48,40 @@ def show_digitize_exam_page():
         
     app_state.current_exam_id = selected_exam['id']
 
-    # --- Delete Confirmation Modal Logic ---
+    # --- Delete Confirmation Dialog Logic ---
     if app_state.question_to_delete:
         question_info = app_state.question_to_delete
 
-        def confirm_delete():
+        def confirm_delete_action():
             success, msg, _ = QuestionService.delete_question(question_info['id'])
-            st.toast(msg, icon="✅" if success else "❌")
+            if success:
+                st.success(f"✅ {msg}")
+                st.balloons()
+            else:
+                st.error(f"❌ {msg}")
             app_state.question_to_delete = None
             st.rerun()
 
-        def cancel_delete():
+        def cancel_delete_action():
+            st.info("↩️ Đã hủy thao tác xóa")
             app_state.question_to_delete = None
             st.rerun()
 
-        # Use new modal instead of old dialog
-        modal_active = render_delete_modal(
+        # Use simple confirmation dialog instead of modal
+        st.subheader("⚠️ Xác nhận xóa câu hỏi")
+
+        render_confirmation_dialog(
             item_name=question_info['label'],
+            on_confirm=confirm_delete_action,
+            on_cancel=cancel_delete_action,
+            dialog_key=f"delete_q_{question_info['id']}",
+            warning_text="Thao tác này sẽ xóa vĩnh viễn câu hỏi và tất cả câu trả lời cùng điểm số của học sinh liên quan.",
             item_type="question",
-            on_confirm=confirm_delete,
-            on_cancel=cancel_delete,
-            modal_key=f"delete_q_{question_info['id']}",
-            warning_text="Thao tác này sẽ xóa vĩnh viễn câu hỏi và tất cả câu trả lời cùng điểm số của học sinh liên quan."
+            show_skip_option=True
         )
 
-        # Stop rendering rest of page while modal is active
-        if modal_active:
-            return
+        # Stop rendering rest of page during confirmation
+        return
 
     # --- Display Existing Questions ---
     success, _, questions = QuestionService.get_questions_by_exam(app_state.current_exam_id)

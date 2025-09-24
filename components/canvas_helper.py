@@ -11,6 +11,25 @@ class CanvasHelper:
     _drawing_cache = {}  # Cache to prevent regenerating identical drawings
 
     @staticmethod
+    def _scale_bbox_to_canvas(bbox_coords: Dict, original_dims: Dict, canvas_width: int) -> Dict:
+        """Scale bounding box coordinates from original image to canvas size."""
+        if not bbox_coords or not original_dims:
+            return None
+
+        try:
+            # Calculate scale factor based on width (maintain aspect ratio)
+            scale_factor = canvas_width / original_dims['width']
+
+            return {
+                'left': int(bbox_coords['left'] * scale_factor),
+                'top': int(bbox_coords['top'] * scale_factor),
+                'width': int(bbox_coords['width'] * scale_factor),
+                'height': int(bbox_coords['height'] * scale_factor)
+            }
+        except (KeyError, TypeError, ZeroDivisionError):
+            return None
+
+    @staticmethod
     def _wrap_text(text: str, max_width_chars: int = 20) -> str:
         """Wrap text to prevent exceeding 60% of image width with better alignment."""
         if len(text) <= max_width_chars:
@@ -204,17 +223,39 @@ class CanvasHelper:
             print(f"    error_phrases: {item.get('error_phrases', [])}")
 
         for item in items_for_this_page:
+            # Try to get bbox positioning for this item
+            bbox_coords = None
+            original_dims = None
+
+            if item.get('bbox_coordinates') and item.get('original_dimensions'):
+                try:
+                    bbox_coords = json.loads(item['bbox_coordinates'])
+                    original_dims = json.loads(item['original_dimensions'])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Scale bbox to canvas if available
+            scaled_bbox = CanvasHelper._scale_bbox_to_canvas(bbox_coords, original_dims, image_width)
+
+            # Determine positioning: use bbox if available, fallback to left-side stacking
+            if scaled_bbox:
+                phrase_left = scaled_bbox['left']
+                phrase_top = scaled_bbox['top']
+            else:
+                phrase_left = 10  # Fallback to left side
+                phrase_top = current_top
+                current_top += 60  # Only increment for fallback positioning
+
             if item['is_correct']:
                 annotation = CanvasHelper._create_annotation_object(
                     text="✅ Chính xác",
-                    left=10,
-                    top=current_top,
+                    left=phrase_left,
+                    top=phrase_top,
                     fill_color="#00ff00",
                     text_color="#00ff00",
                     image_width=image_width
                 )
                 objects.append(annotation)
-                current_top += 60  # Increased spacing for multiline text
             else:
                 # Parse critical and part errors from the grading data (same as results page)
                 critical_errors = []
@@ -233,21 +274,34 @@ class CanvasHelper:
                         pass
                 
                 # Display critical error phrases only (no descriptions)
+                phrase_offset = 0  # Vertical offset for multiple phrases in same bbox
                 if critical_errors:
                     for error in critical_errors:
                         # Only show phrases, skip description
                         if error.get('phrases'):
                             for phrase in error['phrases']:
+                                # Calculate position: use bbox if available, fallback to left stacking
+                                if scaled_bbox:
+                                    error_left = phrase_left
+                                    error_top = phrase_top + phrase_offset
+                                else:
+                                    error_left = 10
+                                    error_top = current_top
+
                                 annotation = CanvasHelper._create_annotation_object(
                                     text=f"❌ {phrase}",
-                                    left=10,
-                                    top=current_top,
+                                    left=error_left,
+                                    top=error_top,
                                     fill_color="#ff0000",
                                     text_color="#ff0000",
                                     image_width=image_width
                                 )
                                 objects.append(annotation)
-                                current_top += 50
+
+                                if scaled_bbox:
+                                    phrase_offset += 25  # Stack within bbox
+                                else:
+                                    current_top += 50  # Stack on left side
                 
                 # Display part error phrases only (no descriptions)
                 if part_errors:
@@ -255,16 +309,28 @@ class CanvasHelper:
                         # Only show phrases, skip description
                         if error.get('phrases'):
                             for phrase in error['phrases']:
+                                # Calculate position: use bbox if available, fallback to left stacking
+                                if scaled_bbox:
+                                    error_left = phrase_left
+                                    error_top = phrase_top + phrase_offset
+                                else:
+                                    error_left = 10
+                                    error_top = current_top
+
                                 annotation = CanvasHelper._create_annotation_object(
                                     text=f"⚠️ {phrase}",
-                                    left=10,
-                                    top=current_top,
+                                    left=error_left,
+                                    top=error_top,
                                     fill_color="#ffaa00",
                                     text_color="#ffaa00",
                                     image_width=image_width
                                 )
                                 objects.append(annotation)
-                                current_top += 50
+
+                                if scaled_bbox:
+                                    phrase_offset += 25  # Stack within bbox
+                                else:
+                                    current_top += 50  # Stack on left side
                 
                 # Fallback to legacy error display if no new format available
                 if not critical_errors and not part_errors:
@@ -272,22 +338,41 @@ class CanvasHelper:
                     error_phrases = item.get('error_phrases', [])
                     if error_phrases and len(error_phrases) > 0:
                         for phrase in error_phrases:
+                            # Calculate position: use bbox if available, fallback to left stacking
+                            if scaled_bbox:
+                                error_left = phrase_left
+                                error_top = phrase_top + phrase_offset
+                            else:
+                                error_left = 10
+                                error_top = current_top
+
                             annotation = CanvasHelper._create_annotation_object(
                                 text=f"❌ {phrase}",
-                                left=10,
-                                top=current_top,
+                                left=error_left,
+                                top=error_top,
                                 fill_color="#ff0000",
                                 text_color="#ff0000",
                                 image_width=image_width
                             )
                             objects.append(annotation)
-                            current_top += 60
+
+                            if scaled_bbox:
+                                phrase_offset += 25  # Stack within bbox
+                            else:
+                                current_top += 60  # Stack on left side
                     else:
                         # Generic fallback
+                        if scaled_bbox:
+                            error_left = phrase_left
+                            error_top = phrase_top
+                        else:
+                            error_left = 10
+                            error_top = current_top
+
                         annotation = CanvasHelper._create_annotation_object(
                             text="❌ Có lỗi",
-                            left=10,
-                            top=current_top,
+                            left=error_left,
+                            top=error_top,
                             fill_color="#ff0000",
                             text_color="#ff0000",
                             image_width=image_width

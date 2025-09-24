@@ -56,6 +56,8 @@ class ResultsService:
                     "part_errors": grading.part_errors,
                     "teacher_notes": grading.teacher_notes,
                     "submission_item_id": item.id,  # Need this for saving comments
+                    "bbox_coordinates": item.answer_bbox_coordinates,  # JSON string or None
+                    "original_dimensions": item.original_image_dimensions,  # JSON string or None
                 })
         
         image_paths = []

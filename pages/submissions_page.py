@@ -162,9 +162,30 @@ def show_answer_mapping_interface():
             label = format_question_label(q.order_index, q.part_label)
             # Dùng st.radio để tự động quản lý trạng thái câu hỏi được chọn
             if st.button(f"{status_icon} {label}", key=f"map_btn_{q.id}", use_container_width=True):
+                # Reset states when switching questions
+                st.session_state['cropped_img_ready'] = False
+                st.session_state['save_triggered'] = False
                 app_state.selected_question_for_mapping = q.id
                 st.rerun() # Rerun để cập nhật cột bên phải
-    
+
+        # Add save button below the question list
+        st.markdown("---")
+
+        # Check if cropped image is ready
+        button_enabled = (app_state.selected_question_for_mapping and
+                         st.session_state.get('cropped_img_ready', False))
+
+        if button_enabled:
+            if st.button("💾 Lưu ánh xạ câu trả lời", type="primary", use_container_width=True, key="save_mapping_left"):
+                st.session_state['save_triggered'] = True
+                st.rerun()
+        else:
+            st.button("💾 Lưu ánh xạ câu trả lời", type="primary", use_container_width=True, key="save_mapping_left", disabled=True)
+            if not app_state.selected_question_for_mapping:
+                st.caption("👈 Chọn câu hỏi để ánh xạ")
+            elif not st.session_state.get('cropped_img_ready', False):
+                st.caption("✂️ Crop ảnh để kích hoạt nút lưu")
+
     with col2:
         st.markdown("**Cắt câu trả lời học sinh**")
         if app_state.selected_question_for_mapping:
@@ -182,7 +203,49 @@ def display_answer_cropping_ui(progress_data):
         return
 
     st.success(f"Ánh xạ câu trả lời cho: **{format_question_label(question.order_index, question.part_label)}**")
-    
+
+    # Display existing cropped images for this question
+    existing_items = db_manager.get_submission_items_by_question(
+        submission_id=progress_data['submission_id'],
+        question_id=question_id
+    )
+
+    if existing_items:
+        with st.expander(f"📸 Hình ảnh đã cắt cho câu này ({len(existing_items)} ảnh)", expanded=True):
+            cols = st.columns(min(3, len(existing_items)))
+            for i, item in enumerate(existing_items):
+                with cols[i % len(cols)]:
+                    try:
+                        # Display primary cropped image
+                        if item.answer_image_path and os.path.exists(item.answer_image_path):
+                            st.image(item.answer_image_path, caption=f"Ảnh cắt {i+1}", width=150)
+
+                        # Display additional cropped images if any
+                        if item.answer_image_paths:
+                            try:
+                                additional_paths = json.loads(item.answer_image_paths)
+                                for j, add_path in enumerate(additional_paths):
+                                    if os.path.exists(add_path):
+                                        st.image(add_path, caption=f"Ảnh {i+1}.{j+1}", width=120)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+
+                        # Show source page info
+                        if hasattr(item, 'source_page_index') and item.source_page_index:
+                            st.caption(f"📄 Trang: {item.source_page_index}")
+
+                        # Add delete button for this cropped image
+                        if st.button("🗑️", key=f"del_crop_{item.id}", help="Xóa ảnh cắt này"):
+                            success = db_manager.delete_submission_item(item.id)
+                            if success:
+                                st.success("✅ Đã xóa ảnh cắt!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Lỗi khi xóa ảnh cắt")
+
+                    except Exception as e:
+                        st.error(f"Lỗi hiển thị ảnh: {e}")
+
     with st.expander("Hiển thị câu hỏi tham khảo"):
         # Show all question images
         try:
@@ -210,31 +273,70 @@ def display_answer_cropping_ui(progress_data):
         st.error("Bài làm này không có hình ảnh bài làm nào để cắt.")
         return
 
-    # Simplified page selection - let Streamlit handle widget state
+    # Simple page selection
     selected_page = st.number_input(
         f"Chọn trang (1 đến {len(image_paths)})",
-        min_value=1, max_value=len(image_paths), 
+        min_value=1, max_value=len(image_paths),
         value=1,  # Default to page 1
         key=f"page_selector_{question_id}"
     )
     page_index = selected_page - 1  # Convert to 0-based indexing
-    
-    
-    img = Image.open(image_paths[page_index])
-    cropped_img = st_cropper(img, realtime_update=True, box_color="#FF4B4B", return_type="image", key=f"cropper_{question_id}_{page_index}")
 
-    if cropped_img and st.button("💾 Lưu ánh xạ câu trả lời", type="primary"):
+    img = Image.open(image_paths[page_index])
+
+    # Simple cropping instructions
+    st.markdown("**Bước 1: Chọn vùng cần cắt**")
+    bbox_coords = st_cropper(img, realtime_update=True, box_color="#FF4B4B", return_type="box", key=f"cropper_{question_id}_{page_index}")
+
+    # If we have bbox coordinates, crop the image manually for preview
+    cropped_img = None
+    if bbox_coords and all(k in bbox_coords for k in ['left', 'top', 'width', 'height']):
+        try:
+            # Manually crop the image using bbox coordinates
+            left = int(bbox_coords['left'])
+            top = int(bbox_coords['top'])
+            width = int(bbox_coords['width'])
+            height = int(bbox_coords['height'])
+
+            # Crop the image
+            cropped_img = img.crop((left, top, left + width, top + height))
+
+            st.markdown("**Bước 2: Xem trước vùng đã cắt**")
+            st.image(cropped_img, caption="Vùng đã cắt", width=300)
+
+        except Exception as e:
+            st.error(f"Lỗi khi cắt ảnh: {e}")
+            cropped_img = None
+
+    # Store cropped image and data in session state for left button to use
+    if cropped_img:
+        st.session_state['current_cropped_img'] = cropped_img
+        st.session_state['current_bbox_coords'] = bbox_coords
+        st.session_state['current_page_index'] = page_index
+        st.session_state['current_img_dimensions'] = {"width": img.width, "height": img.height}
+        st.session_state['cropped_img_ready'] = True
+    else:
+        st.session_state['cropped_img_ready'] = False
+
+    # Handle save action triggered from left column
+    if st.session_state.get('save_triggered', False) and st.session_state.get('cropped_img_ready', False):
         with st.spinner("Đang lưu..."):
             success, message, _ = SubmissionService.create_answer_mapping(
                 submission_id=progress_data['submission_id'],
                 question_id=question_id,
-                cropped_images=[cropped_img],
+                cropped_images=[st.session_state['current_cropped_img']],
                 student_name=progress_data['student_name'],
-                source_page_index=page_index
+                source_page_index=st.session_state['current_page_index'],
+                bbox_coordinates=st.session_state['current_bbox_coords'],
+                original_dimensions=st.session_state['current_img_dimensions']
             )
             if success:
                 st.success(message)
                 app_state.selected_question_for_mapping = None # Reset selection
+                # Clear session state
+                st.session_state['save_triggered'] = False
+                st.session_state['cropped_img_ready'] = False
                 st.rerun()
             else:
                 st.error(f"❌ Ánh xạ câu trả lời thất bại: {message}")
+                st.session_state['save_triggered'] = False

@@ -70,9 +70,13 @@ class SubmissionItemV2(Base):
     # Can store either single integer (backward compatibility) or JSON array for multi-page answers
     source_page_index = Column(String, nullable=False, default='0')
 
-    answer_image_path = Column(String(512), nullable=False)   
+    answer_image_path = Column(String(512), nullable=False)
     answer_image_paths = Column(String, nullable=True)
     has_multiple_images = Column(Boolean, default=False)
+
+    # Bounding box coordinates for precise canvas positioning
+    answer_bbox_coordinates = Column(String, nullable=True)  # JSON: {"left": x, "top": y, "width": w, "height": h}
+    original_image_dimensions = Column(String, nullable=True)  # JSON: {"width": w, "height": h}
     
     grading = relationship("GradingV2", back_populates="submission_item", uselist=False, cascade="all, delete-orphan")
     submission = relationship("SubmissionV2", back_populates="items")

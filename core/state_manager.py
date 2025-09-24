@@ -32,17 +32,13 @@ class AppState:
             "question_to_delete": None,
             "selected_question_for_mapping": None,
             "mapping_mode": False,
-            "grading_in_progress": False,
             "last_saved_question": None,
             "last_submission_created": None,
-            "question_to_delete_from_grading": None,
             "regrade_item_id": None,
             "regrade_clarify_text": "",
             "selected_submission_for_grading": None,
 
-            # Modal-related state
-            "active_modal": None,
-            "modal_data": {},
+            # Modal-related state (still used by solution_review)
             "show_batch_clear_modal": False,
         }
 
