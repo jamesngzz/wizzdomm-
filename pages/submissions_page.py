@@ -165,6 +165,10 @@ def show_answer_mapping_interface():
                 # Reset states when switching questions
                 st.session_state['cropped_img_ready'] = False
                 st.session_state['save_triggered'] = False
+                # Reset page selector for new question
+                session_key = f"current_selected_page_{q.id}"
+                if session_key in st.session_state:
+                    st.session_state[session_key] = 1
                 app_state.selected_question_for_mapping = q.id
                 st.rerun() # Rerun để cập nhật cột bên phải
 
@@ -196,8 +200,36 @@ def show_answer_mapping_interface():
 def display_answer_cropping_ui(progress_data):
     """Hiển thị giao diện cắt câu trả lời cho câu hỏi được chọn."""
     question_id = app_state.selected_question_for_mapping
+
+    # ✅ XỬ LÝ SAVE NGAY TỪ ĐẦU - TRƯỚC KHI RENDER UI
+    if st.session_state.get('save_triggered', False) and st.session_state.get('cropped_img_ready', False):
+        with st.spinner("Đang lưu..."):
+            success, message, _ = SubmissionService.create_answer_mapping(
+                submission_id=progress_data['submission_id'],
+                question_id=question_id,
+                cropped_images=[st.session_state['current_cropped_img']],
+                student_name=progress_data['student_name'],
+                source_page_index=st.session_state['current_page_index'],
+                bbox_coordinates=st.session_state['current_bbox_coords'],
+                original_dimensions=st.session_state['current_img_dimensions']
+            )
+            if success:
+                st.success(message)
+                app_state.selected_question_for_mapping = None
+                # Clear session states
+                st.session_state['save_triggered'] = False
+                st.session_state['cropped_img_ready'] = False
+                # Reset page selector for this question
+                session_key = f"current_selected_page_{question_id}"
+                st.session_state.pop(session_key, None)
+                st.rerun()
+            else:
+                st.error(f"❌ Ánh xạ câu trả lời thất bại: {message}")
+                st.session_state['save_triggered'] = False
+        return  # Return ngay sau khi lưu - không render UI nữa
+
     success, msg, question = QuestionService.get_question_by_id(question_id)
-    
+
     if not success or not question:
         st.error(f"Không thể tải dữ liệu câu hỏi: {msg}")
         return
@@ -273,13 +305,30 @@ def display_answer_cropping_ui(progress_data):
         st.error("Bài làm này không có hình ảnh bài làm nào để cắt.")
         return
 
-    # Simple page selection
+    # Initialize session state for page selector to persist across reruns
+    session_key = f"current_selected_page_{question_id}"
+    widget_key = f"page_selector_{question_id}"
+
+    if session_key not in st.session_state:
+        st.session_state[session_key] = 1
+
+    # Get current value from widget if exists, otherwise use session state
+    if widget_key in st.session_state:
+        current_page_value = st.session_state[widget_key]
+    else:
+        current_page_value = st.session_state[session_key]
+
+    # Simple page selection with persisted value
     selected_page = st.number_input(
         f"Chọn trang (1 đến {len(image_paths)})",
         min_value=1, max_value=len(image_paths),
-        value=1,  # Default to page 1
-        key=f"page_selector_{question_id}"
+        value=current_page_value,  # Use persisted value
+        key=widget_key
     )
+
+    # Update session state when page changes
+    st.session_state[session_key] = selected_page
+
     page_index = selected_page - 1  # Convert to 0-based indexing
 
     img = Image.open(image_paths[page_index])
@@ -317,26 +366,3 @@ def display_answer_cropping_ui(progress_data):
         st.session_state['cropped_img_ready'] = True
     else:
         st.session_state['cropped_img_ready'] = False
-
-    # Handle save action triggered from left column
-    if st.session_state.get('save_triggered', False) and st.session_state.get('cropped_img_ready', False):
-        with st.spinner("Đang lưu..."):
-            success, message, _ = SubmissionService.create_answer_mapping(
-                submission_id=progress_data['submission_id'],
-                question_id=question_id,
-                cropped_images=[st.session_state['current_cropped_img']],
-                student_name=progress_data['student_name'],
-                source_page_index=st.session_state['current_page_index'],
-                bbox_coordinates=st.session_state['current_bbox_coords'],
-                original_dimensions=st.session_state['current_img_dimensions']
-            )
-            if success:
-                st.success(message)
-                app_state.selected_question_for_mapping = None # Reset selection
-                # Clear session state
-                st.session_state['save_triggered'] = False
-                st.session_state['cropped_img_ready'] = False
-                st.rerun()
-            else:
-                st.error(f"❌ Ánh xạ câu trả lời thất bại: {message}")
-                st.session_state['save_triggered'] = False
