@@ -112,8 +112,8 @@ services:
       mountPath: /app/media
       sizeGB: 20
 
-staticSites:
-  - name: ta-frontend
+  - type: static_site
+    name: ta-frontend
     rootDir: FE
     buildCommand: npm ci && npm run build
     publishPath: dist
@@ -132,10 +132,10 @@ staticSites:
       - key: VITE_WS_URL
         value: wss://yourapp.onrender.com/ws/notifications/
 
-databases:
-  - name: ta-postgres
+  - type: redis
+    name: ta-redis
     plan: starter
 
-redis:
-  - name: ta-redis
+databases:
+  - name: ta-postgres
     plan: starter
