@@ -98,11 +98,16 @@ services:
       mountPath: /app/media
       sizeGB: 20
 
-  - type: static
-    name: ta-frontend
+staticSites:
+  - name: ta-frontend
     rootDir: FE
     buildCommand: npm ci && npm run build
     publishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://yourapp.onrender.com/api
+      - key: VITE_WS_URL
+        value: wss://yourapp.onrender.com/ws/notifications/
     routes:
       - type: rewrite
         source: /(.*)
