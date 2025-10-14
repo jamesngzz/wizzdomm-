@@ -59,7 +59,7 @@ services:
     rootDir: new/backend
     runtime: docker
     plan: starter
-    startCommand: python manage.py run_job_worker
+    dockerCommand: python manage.py run_job_worker
     envVars:
       - key: SECRET_KEY
         sync: false
