@@ -103,6 +103,14 @@ services:
     rootDir: FE
     buildCommand: npm ci && npm run build
     publishPath: dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-store
+    redirects:
+      - source: /(.*)
+        destination: /index.html
+        status: 200
     envVars:
       - key: VITE_API_URL
         value: https://yourapp.onrender.com/api
