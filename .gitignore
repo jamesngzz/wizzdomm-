@@ -1,15 +1,31 @@
-*.env
-*.md
-*.log
-*.db
-*.png
-*.pyc
+# OS
+.DS_Store
 
-**/static/**
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
 
-.streamlit
-.claude
+# Node/FE
+node_modules/
+FE/node_modules/
+FE/dist/
 
-test_gemini_ocr.py
+# Secrets
+.env
+.env.*
+new/.env
+new/.env.*
+!**/.env.example
+!FE/.env.production.example
 
-**/test_data/**
+# Media & logs
+new/backend/media/
+**/*.log
+*.sqlite3
+
+# Build artifacts
+*.lockb
+bun.lockb

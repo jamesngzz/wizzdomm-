@@ -6,7 +6,7 @@ import asyncio
 from pathlib import Path
 from typing import List, Dict, Any
 
-from google import genai
+import google.genai as genai
 from google.genai import types
 
 from .base_model import BaseGradingModel
