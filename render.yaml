@@ -126,11 +126,6 @@ services:
       - type: rewrite
         source: /(.*)
         destination: /index.html
-    envVars:
-      - key: VITE_API_URL
-        value: https://yourapp.onrender.com/api
-      - key: VITE_WS_URL
-        value: wss://yourapp.onrender.com/ws/notifications/
 
   - type: redis
     name: ta-redis
