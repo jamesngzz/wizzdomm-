@@ -1,0 +1,118 @@
+services:
+  - type: web
+    name: ta-backend
+    rootDir: new/backend
+    env: docker
+    plan: starter
+    envVars:
+      - key: SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: false
+      - key: ALLOWED_HOSTS
+        value: yourapp.onrender.com
+      - key: TIME_ZONE
+        value: UTC
+      - key: DB_ENGINE
+        value: django.db.backends.postgresql
+      - key: DB_NAME
+        fromDatabase: ta-postgres
+        property: database
+      - key: DB_USER
+        fromDatabase: ta-postgres
+        property: user
+      - key: DB_PASSWORD
+        fromDatabase: ta-postgres
+        property: password
+      - key: DB_HOST
+        fromDatabase: ta-postgres
+        property: host
+      - key: DB_PORT
+        fromDatabase: ta-postgres
+        property: port
+      - key: CHANNEL_REDIS_URL
+        fromService: ta-redis
+        property: connectionString
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://your-frontend.onrender.com
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://your-frontend.onrender.com
+      - key: MAX_CONCURRENT_GRADING
+        value: 10
+      - key: AUTO_GRADE_ON_CREATE
+        value: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    disk:
+      name: media
+      mountPath: /app/media
+      sizeGB: 20
+
+  - type: worker
+    name: ta-worker
+    rootDir: new/backend
+    env: docker
+    plan: starter
+    startCommand: python manage.py run_job_worker
+    envVars:
+      - key: SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: false
+      - key: ALLOWED_HOSTS
+        value: yourapp.onrender.com
+      - key: TIME_ZONE
+        value: UTC
+      - key: DB_ENGINE
+        value: django.db.backends.postgresql
+      - key: DB_NAME
+        fromDatabase: ta-postgres
+        property: database
+      - key: DB_USER
+        fromDatabase: ta-postgres
+        property: user
+      - key: DB_PASSWORD
+        fromDatabase: ta-postgres
+        property: password
+      - key: DB_HOST
+        fromDatabase: ta-postgres
+        property: host
+      - key: DB_PORT
+        fromDatabase: ta-postgres
+        property: port
+      - key: CHANNEL_REDIS_URL
+        fromService: ta-redis
+        property: connectionString
+      - key: MAX_CONCURRENT_GRADING
+        value: 10
+      - key: AUTO_GRADE_ON_CREATE
+        value: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+    disk:
+      name: media
+      mountPath: /app/media
+      sizeGB: 20
+
+  - type: static_site
+    name: ta-frontend
+    rootDir: FE
+    buildCommand: npm ci && npm run build
+    publishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://yourapp.onrender.com/api
+      - key: VITE_WS_URL
+        value: wss://yourapp.onrender.com/ws/notifications/
+
+databases:
+  - name: ta-postgres
+    plan: starter
+
+redis:
+  - name: ta-redis
+    plan: starter

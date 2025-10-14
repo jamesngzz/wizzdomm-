@@ -136,12 +136,21 @@ REST_FRAMEWORK = {
 }
 
 
-# Channels – in-memory layer for dev; can switch to Redis later
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
+# Channels – use Redis in production if CHANNEL_REDIS_URL is provided; fallback to in-memory for dev
+_channel_redis_url = os.getenv("CHANNEL_REDIS_URL")
+if _channel_redis_url:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [_channel_redis_url]},
+        }
     }
-}
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
 
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
