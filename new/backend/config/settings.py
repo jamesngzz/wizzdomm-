@@ -71,6 +71,14 @@ if _database_url:
     DATABASES = {
         "default": dj_database_url.parse(_database_url, conn_max_age=600, ssl_require=True)
     }
+    # With managed poolers (e.g., Supabase PgBouncer), persistent connections can exhaust pool.
+    # Default to short-lived connections; override via CONN_MAX_AGE env if needed.
+    try:
+        DATABASES["default"]["CONN_MAX_AGE"] = int(os.getenv("CONN_MAX_AGE", "0"))
+    except Exception:
+        DATABASES["default"]["CONN_MAX_AGE"] = 0
+    # Avoid server-side cursors when behind transaction poolers
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 else:
     # In production we require DATABASE_URL; fail fast to avoid silent SQLite fallback
     raise RuntimeError("DATABASE_URL must be set in production")
