@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import dj_database_url
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -64,16 +65,15 @@ WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
 
-DATABASES = {
-    "default": {
-        "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.sqlite3"),
-        "NAME": os.getenv("DB_NAME", str(BASE_DIR / "db.sqlite3")),
-        "USER": os.getenv("DB_USER", ""),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", ""),
-        "PORT": os.getenv("DB_PORT", ""),
+_database_url = os.getenv("DATABASE_URL")
+if _database_url:
+    # Prefer DATABASE_URL (e.g., Supabase). Enforce SSL and reuse connections.
+    DATABASES = {
+        "default": dj_database_url.parse(_database_url, conn_max_age=600, ssl_require=True)
     }
-}
+else:
+    # In production we require DATABASE_URL; fail fast to avoid silent SQLite fallback
+    raise RuntimeError("DATABASE_URL must be set in production")
 
 
 LANGUAGE_CODE = "en-us"
@@ -84,10 +84,12 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [
+# Only include static directories that actually exist in the current runtime
+_static_candidates = [
     BASE_DIR / "static",
     BASE_DIR.parent.parent / "FE" / "dist",  # React frontend build (FE folder)
 ]
+STATICFILES_DIRS = [p for p in _static_candidates if p.exists()]
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
