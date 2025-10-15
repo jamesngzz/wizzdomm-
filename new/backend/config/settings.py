@@ -80,8 +80,17 @@ if _database_url:
     # Avoid server-side cursors when behind transaction poolers
     DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
 else:
-    # In production we require DATABASE_URL; fail fast to avoid silent SQLite fallback
-    raise RuntimeError("DATABASE_URL must be set in production")
+    # Fallback to SQLite for local/dev use when DATABASE_URL is not provided
+    DATABASES = {
+        "default": {
+            "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.sqlite3"),
+            "NAME": os.getenv("DB_NAME", str(BASE_DIR / "db.sqlite3")),
+            "USER": os.getenv("DB_USER", ""),
+            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "HOST": os.getenv("DB_HOST", ""),
+            "PORT": os.getenv("DB_PORT", ""),
+        }
+    }
 
 
 LANGUAGE_CODE = "en-us"
