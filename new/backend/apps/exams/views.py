@@ -15,6 +15,9 @@ from apps.common.files import (
     delete_image_files,
 )
 from pathlib import Path
+from io import BytesIO
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from apps.common.image_ops import crop_bbox
 from apps.common.labels import parse_question_label
 from .models import Exam, Question
@@ -133,17 +136,17 @@ class QuestionViewSet(viewsets.GenericViewSet):
         except Exception as e:
             return Response({"detail": f"Crop failed: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # save
-        q_dir = settings.MEDIA_QUESTIONS_DIR / f"exam_{exam.id}"
-        q_dir.mkdir(parents=True, exist_ok=True)
+        # save via storage (S3 or local)
         order_index, part_label = parse_question_label(label)
         filename = f"q_{order_index}{part_label or ''}_{src_path.stem}.jpg"
-        out_path = q_dir / filename
-        cropped.save(out_path, "JPEG", quality=95)
+        key = f"questions/exam_{exam.id}/{filename}"
+        buf = BytesIO()
+        cropped.save(buf, "JPEG", quality=95)
+        default_storage.save(key, ContentFile(buf.getvalue()))
 
         question = Question.objects.create(
             exam=exam,
-            question_image_paths=[str(out_path)],
+            question_image_paths=[key],
             has_multiple_images=False,
             order_index=order_index,
             part_label=part_label,
@@ -275,17 +278,17 @@ class QuestionViewSet(viewsets.GenericViewSet):
         except Exception as e:
             return Response({"detail": f"Crop failed: {e}"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Save with unique filename
-        q_dir = settings.MEDIA_QUESTIONS_DIR / f"exam_{exam.id}"
-        q_dir.mkdir(parents=True, exist_ok=True)
+        # Save with unique filename via storage
         import uuid
         filename = f"q_{question.order_index}{question.part_label or ''}_{uuid.uuid4().hex[:8]}.jpg"
-        out_path = q_dir / filename
-        cropped.save(out_path, "JPEG", quality=95)
+        key = f"questions/exam_{exam.id}/{filename}"
+        buf = BytesIO()
+        cropped.save(buf, "JPEG", quality=95)
+        default_storage.save(key, ContentFile(buf.getvalue()))
         
         # Append to existing paths
         existing_paths = question.question_image_paths or []
-        existing_paths.append(str(out_path))
+        existing_paths.append(key)
         question.question_image_paths = existing_paths
         question.has_multiple_images = len(existing_paths) > 1
         question.save(update_fields=["question_image_paths", "has_multiple_images"])
