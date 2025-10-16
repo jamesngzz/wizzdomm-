@@ -74,18 +74,22 @@ class ExamViewSet(viewsets.ModelViewSet):
         for p in paths:
             try:
                 sp = str(p)
+                # If the entry is a storage key, return a fully-qualified URL from storage
+                if default_storage.exists(sp):
+                    urls.append(default_storage.url(sp))
+                    continue
+
                 # Handle Unicode normalization issues by normalizing both paths
                 import unicodedata
                 normalized_path = unicodedata.normalize('NFC', sp)
                 normalized_media_root = unicodedata.normalize('NFC', media_root)
-                
                 if normalized_path.startswith(normalized_media_root):
                     rel = normalized_path[len(normalized_media_root):].lstrip("/")
-                    # Build absolute URL so FE on a different port can load it
                     urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
                 else:
-                    # fallback: return as-is; browser may still access if served
-                    urls.append(sp)
+                    # treat as relative to MEDIA_URL
+                    rel = sp.lstrip("/")
+                    urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
             except Exception:
                 urls.append(p)
         return Response({"count": len(urls), "urls": urls})
@@ -213,15 +217,18 @@ class QuestionViewSet(viewsets.GenericViewSet):
         for p in paths:
             try:
                 sp = str(p)
+                if default_storage.exists(sp):
+                    urls.append(default_storage.url(sp))
+                    continue
                 import unicodedata
                 normalized_path = unicodedata.normalize('NFC', sp)
                 normalized_media_root = unicodedata.normalize('NFC', media_root)
-                
                 if normalized_path.startswith(normalized_media_root):
                     rel = normalized_path[len(normalized_media_root):].lstrip("/")
                     urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
                 else:
-                    urls.append(sp)
+                    rel = sp.lstrip("/")
+                    urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
             except Exception:
                 urls.append(p)
         return Response({
