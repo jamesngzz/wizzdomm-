@@ -42,7 +42,17 @@ def validate_pdf_file(upload: UploadedFile) -> Tuple[bool, str]:
 
 
 def _to_key(target_dir: Path, filename: str) -> str:
-    base = str(target_dir).strip("/")
+    """Build a storage key relative to MEDIA_ROOT.
+
+    If target_dir is under settings.MEDIA_ROOT, strip that prefix; otherwise
+    fall back to the raw string (useful in dev).
+    """
+    base_path = Path(target_dir)
+    try:
+        rel = base_path.relative_to(settings.MEDIA_ROOT)
+        base = str(rel).strip("/")
+    except Exception:
+        base = str(base_path).strip("/")
     return f"{base}/{filename}" if base else filename
 
 
