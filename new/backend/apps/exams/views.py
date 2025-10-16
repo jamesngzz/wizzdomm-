@@ -19,6 +19,8 @@ from io import BytesIO
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from apps.common.image_ops import crop_bbox
+from django.core.files.storage import default_storage
+from tempfile import NamedTemporaryFile
 from apps.common.labels import parse_question_label
 from .models import Exam, Question
 from .serializers import ExamSerializer, QuestionSerializer
@@ -126,9 +128,19 @@ class QuestionViewSet(viewsets.GenericViewSet):
         if page_index < 0 or page_index >= len(paths):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
 
-        src_path = Path(paths[page_index])
-        if not src_path.exists():
-            return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
+        # Resolve source image from storage or filesystem
+        raw = str(paths[page_index])
+        src_path: Path
+        if default_storage.exists(raw):
+            # Pull object to temp file for cropping
+            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+                tmp.write(src.read())
+                tmp.flush()
+                src_path = Path(tmp.name)
+        else:
+            src_path = Path(raw)
+            if not src_path.exists():
+                return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         # crop
         try:
@@ -268,9 +280,16 @@ class QuestionViewSet(viewsets.GenericViewSet):
         if page_index < 0 or page_index >= len(paths):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
         
-        src_path = Path(paths[page_index])
-        if not src_path.exists():
-            return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
+        raw = str(paths[page_index])
+        if default_storage.exists(raw):
+            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+                tmp.write(src.read())
+                tmp.flush()
+                src_path = Path(tmp.name)
+        else:
+            src_path = Path(raw)
+            if not src_path.exists():
+                return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
         
         # Crop the image
         try:
