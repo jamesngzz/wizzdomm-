@@ -100,7 +100,8 @@ _static_candidates = [
 STATICFILES_DIRS = [p for p in _static_candidates if p.exists()]
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+from pathlib import Path as _Path
+MEDIA_ROOT = _Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
 
 # Media subfolders
 MEDIA_EXAMS_DIR = MEDIA_ROOT / "exams"
