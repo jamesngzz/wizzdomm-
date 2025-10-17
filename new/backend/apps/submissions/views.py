@@ -16,7 +16,7 @@ from apps.common.files import (
     delete_image_file,
     delete_image_files,
 )
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 from django.core.files.base import ContentFile
@@ -206,13 +206,29 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
 
         raw = str(paths[page_index])
-        if default_storage.exists(raw):
-            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+        # Prefer upscaled page if available in storage
+        pref = raw
+        try:
+            scale = int(getattr(settings, "REAL_ESRGAN_SCALE", 2))
+        except Exception:
+            scale = 2
+        try:
+            p = PurePosixPath(raw)
+            up_dir = p.parent / "upscaled"
+            up_name = f"{p.stem}_x{scale}{p.suffix}"
+            up_key = str(up_dir / up_name)
+            if default_storage.exists(up_key):
+                pref = up_key
+        except Exception:
+            pref = raw
+
+        if default_storage.exists(pref):
+            with default_storage.open(pref, "rb") as src, NamedTemporaryFile(suffix=Path(pref).suffix, delete=False) as tmp:
                 tmp.write(src.read())
                 tmp.flush()
                 src_path = Path(tmp.name)
         else:
-            src_path = Path(raw)
+            src_path = Path(pref)
             if not src_path.exists():
                 return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -382,9 +398,6 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         """List all submission items with image status"""
         submission = get_object_or_404(Submission, pk=pk)
         items = submission.items.select_related("question").all()
-        media_root = str(settings.MEDIA_ROOT)
-        media_url = settings.MEDIA_URL.rstrip("/")
-        
         result = []
         for item in items:
             # Remove any missing paths and persist cleanup
@@ -394,17 +407,12 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             for p in paths:
                 try:
                     sp = str(p)
-                    import unicodedata
-                    normalized_path = unicodedata.normalize('NFC', sp)
-                    normalized_media_root = unicodedata.normalize('NFC', media_root)
-                    
-                    if normalized_path.startswith(normalized_media_root):
-                        rel = normalized_path[len(normalized_media_root):].lstrip("/")
-                        urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
+                    if default_storage.exists(sp):
+                        urls.append(default_storage.url(sp))
                     else:
-                        urls.append(sp)
+                        urls.append(request.build_absolute_uri(f"{settings.MEDIA_URL.rstrip('/')}/{sp.lstrip('/')}"))
                 except Exception:
-                    urls.append(p)
+                    urls.append(str(p))
             if paths != raw_paths:
                 try:
                     item.answer_image_paths = paths
@@ -491,7 +499,17 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         page_w, page_h = A4
         for page_idx, img_path in enumerate(images):
             try:
-                img = ImageReader(str(img_path))
+                sp = str(img_path)
+                img_reader = None
+                try:
+                    if default_storage.exists(sp):
+                        with default_storage.open(sp, "rb") as fh:
+                            img_reader = ImageReader(BytesIO(fh.read()))
+                except Exception:
+                    img_reader = None
+                if img_reader is None:
+                    img_reader = ImageReader(str(sp))
+                img = img_reader
                 iw, ih = img.getSize()
                 # fit into page with margins
                 scale = min((page_w - 40) / iw, (page_h - 40) / ih)
@@ -788,15 +806,16 @@ class ItemDetailAPIView(APIView):
         except SubmissionItem.DoesNotExist:
             return Response({"detail": "Item not found"}, status=status.HTTP_404_NOT_FOUND)
 
-        media_root = str(settings.MEDIA_ROOT)
         media_url = settings.MEDIA_URL.rstrip("/")
 
         def to_url(p: str) -> str:
             sp = str(p)
-            if sp.startswith(media_root):
-                rel = sp[len(media_root):].lstrip("/")
-                return f"{media_url}/{rel}"
-            return sp
+            try:
+                if default_storage.exists(sp):
+                    return default_storage.url(sp)
+            except Exception:
+                pass
+            return f"{media_url}/{sp.lstrip('/')}"
 
         # Filter out missing files (unicode-safe) and persist cleanup
         existing_paths = []
@@ -976,13 +995,29 @@ class ItemAppendImageView(APIView):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
 
         raw = str(paths[page_index])
-        if default_storage.exists(raw):
-            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+        # Prefer upscaled page if available in storage
+        pref = raw
+        try:
+            scale = int(getattr(settings, "REAL_ESRGAN_SCALE", 2))
+        except Exception:
+            scale = 2
+        try:
+            p = PurePosixPath(raw)
+            up_dir = p.parent / "upscaled"
+            up_name = f"{p.stem}_x{scale}{p.suffix}"
+            up_key = str(up_dir / up_name)
+            if default_storage.exists(up_key):
+                pref = up_key
+        except Exception:
+            pref = raw
+
+        if default_storage.exists(pref):
+            with default_storage.open(pref, "rb") as src, NamedTemporaryFile(suffix=Path(pref).suffix, delete=False) as tmp:
                 tmp.write(src.read())
                 tmp.flush()
                 src_path = Path(tmp.name)
         else:
-            src_path = Path(raw)
+            src_path = Path(pref)
             if not normalized_path_exists(src_path):
                 return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
 
