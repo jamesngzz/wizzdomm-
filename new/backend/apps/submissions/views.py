@@ -17,6 +17,10 @@ from apps.common.files import (
     delete_image_files,
 )
 from pathlib import Path
+from io import BytesIO
+from tempfile import NamedTemporaryFile
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from apps.exams.models import Exam, Question
 from apps.common.image_ops import crop_bbox
 from apps.common.files import normalized_path_exists
@@ -165,24 +169,16 @@ class SubmissionViewSet(viewsets.ModelViewSet):
     def images(self, request, pk=None):
         submission = get_object_or_404(Submission, pk=pk)
         paths = submission.original_image_paths or []
-        media_root = str(settings.MEDIA_ROOT)
-        media_url = settings.MEDIA_URL.rstrip("/")
         urls = []
         for p in paths:
             try:
                 sp = str(p)
-                # Handle Unicode normalization issues by normalizing both paths
-                import unicodedata
-                normalized_path = unicodedata.normalize('NFC', sp)
-                normalized_media_root = unicodedata.normalize('NFC', media_root)
-                
-                if normalized_path.startswith(normalized_media_root):
-                    rel = normalized_path[len(normalized_media_root):].lstrip("/")
-                    urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
+                if default_storage.exists(sp):
+                    urls.append(default_storage.url(sp))
                 else:
-                    urls.append(sp)
+                    urls.append(request.build_absolute_uri(f"{settings.MEDIA_URL.rstrip('/')}/{sp.lstrip('/')}"))
             except Exception:
-                urls.append(sp)
+                urls.append(str(p))
         return Response({"count": len(urls), "urls": urls})
 
     @action(detail=True, methods=["post"], url_path="items")
@@ -209,25 +205,29 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         if page_index < 0 or page_index >= len(paths):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
 
-        src_path = Path(paths[page_index])
-        if not src_path.exists():
-            return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
+        raw = str(paths[page_index])
+        if default_storage.exists(raw):
+            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+                tmp.write(src.read())
+                tmp.flush()
+                src_path = Path(tmp.name)
+        else:
+            src_path = Path(raw)
+            if not src_path.exists():
+                return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             cropped = crop_bbox(src_path, bbox)
         except Exception as e:
             return Response({"detail": f"Crop failed: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        ans_dir = settings.MEDIA_ANSWERS_DIR / f"submission_{submission.id}"
-        ans_dir.mkdir(parents=True, exist_ok=True)
+        # Save cropped answer via storage
         filename = f"ans_q{question.order_index}{question.part_label or ''}_{src_path.stem}.jpg"
-        out_path = ans_dir / filename
-        
+        key = f"answers/submission_{submission.id}/{filename}"
+        buf = BytesIO()
+        cropped.save(buf, "JPEG", quality=95)
         try:
-            cropped.save(out_path, "JPEG", quality=95)
-            # Verify the file was saved successfully
-            if not out_path.exists() or out_path.stat().st_size == 0:
-                return Response({"detail": "Failed to save answer image (empty file)"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            default_storage.save(key, ContentFile(buf.getvalue()))
         except Exception as e:
             return Response({"detail": f"Failed to save answer image: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -240,7 +240,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             submission=submission,
             question=question,
             source_page_indices=[page_index],
-            answer_image_paths=[str(out_path)],
+            answer_image_paths=[key],
             has_multiple_images=False,
             answer_bbox=bbox,
             original_image_dimensions={"width": orig_w, "height": orig_h},
@@ -482,10 +482,12 @@ class SubmissionViewSet(viewsets.ModelViewSet):
 
         export_dir = settings.MEDIA_EXPORTS_DIR
         export_dir.mkdir(parents=True, exist_ok=True)
-        out_path = export_dir / f"submission_{submission.id}.pdf"
+        out_key = f"exports/submission_{submission.id}.pdf"
 
         # Create a PDF concatenating images to A4 pages and overlaying annotations
-        c = pdf_canvas.Canvas(str(out_path), pagesize=A4)
+        from io import BytesIO
+        pdf_buf = BytesIO()
+        c = pdf_canvas.Canvas(pdf_buf, pagesize=A4)
         page_w, page_h = A4
         for page_idx, img_path in enumerate(images):
             try:
@@ -753,11 +755,17 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             except Exception:
                 continue
         c.save()
-
-        media_root = str(settings.MEDIA_ROOT)
-        media_url = settings.MEDIA_URL.rstrip("/")
-        rel = str(out_path)[len(media_root):].lstrip("/")
-        url = request.build_absolute_uri(f"{media_url}/{rel}")
+        # write via storage
+        try:
+            default_storage.save(out_key, ContentFile(pdf_buf.getvalue()))
+            url = default_storage.url(out_key)
+        except Exception:
+            # fallback to local path
+            abs_path = (export_dir / f"submission_{submission.id}.pdf")
+            with open(abs_path, "wb") as fh:
+                fh.write(pdf_buf.getvalue())
+            rel = str(abs_path)[len(str(settings.MEDIA_ROOT)):].lstrip("/")
+            url = request.build_absolute_uri(f"{settings.MEDIA_URL.rstrip('/')}/{rel}")
         return Response({"pdf_url": url})
 
 
@@ -967,27 +975,33 @@ class ItemAppendImageView(APIView):
         if page_index < 0 or page_index >= len(paths):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
 
-        src_path = Path(paths[page_index])
-        if not normalized_path_exists(src_path):
-            return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
+        raw = str(paths[page_index])
+        if default_storage.exists(raw):
+            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+                tmp.write(src.read())
+                tmp.flush()
+                src_path = Path(tmp.name)
+        else:
+            src_path = Path(raw)
+            if not normalized_path_exists(src_path):
+                return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             cropped = crop_bbox(src_path, bbox)
         except Exception as e:
             return Response({"detail": f"Crop failed: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        ans_dir = settings.MEDIA_ANSWERS_DIR / f"submission_{submission.id}"
-        ans_dir.mkdir(parents=True, exist_ok=True)
         filename = f"ans_q{item.question.order_index}{item.question.part_label or ''}_{uuid.uuid4().hex[:8]}.jpg"
-        out_path = ans_dir / filename
-
+        key = f"answers/submission_{submission.id}/{filename}"
+        buf = BytesIO()
+        cropped.save(buf, "JPEG", quality=95)
         try:
-            cropped.save(out_path, "JPEG", quality=95)
+            default_storage.save(key, ContentFile(buf.getvalue()))
         except Exception as e:
             return Response({"detail": f"Failed to save answer image: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         existing_paths = item.answer_image_paths or []
-        existing_paths.append(str(out_path))
+        existing_paths.append(key)
         item.answer_image_paths = existing_paths
         item.has_multiple_images = len(existing_paths) > 1
         # Also record page index mapping
@@ -997,20 +1011,15 @@ class ItemAppendImageView(APIView):
         item.save(update_fields=["answer_image_paths", "has_multiple_images", "source_page_indices"])
 
         # Build URLs back
-        media_root = str(settings.MEDIA_ROOT)
-        media_url = settings.MEDIA_URL.rstrip("/")
         urls = []
         for p in existing_paths:
             sp = str(p)
             try:
-                import unicodedata
-                normalized_path = unicodedata.normalize('NFC', sp)
-                normalized_media_root = unicodedata.normalize('NFC', media_root)
-                if normalized_path.startswith(normalized_media_root):
-                    rel = normalized_path[len(normalized_media_root):].lstrip("/")
-                    urls.append(f"{media_url}/{rel}")
+                if default_storage.exists(sp):
+                    urls.append(default_storage.url(sp))
                 else:
-                    urls.append(sp)
+                    # fallback to MEDIA_URL relative
+                    urls.append(request.build_absolute_uri(f"{settings.MEDIA_URL.rstrip('/')}/{sp.lstrip('/')}"))
             except Exception:
                 urls.append(sp)
 

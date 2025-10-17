@@ -144,13 +144,18 @@ def _normalize_path_variants(path_like: Union[str, Path]) -> List[Path]:
 
 
 def normalized_path_exists(path_like: Union[str, Path]) -> bool:
-    """Check whether a path exists, trying both NFC and NFD representations."""
+    """Check whether a path exists in storage first, else on local FS (NFC/NFD)."""
+    try:
+        sp = str(path_like)
+        if default_storage.exists(sp):
+            return True
+    except Exception:
+        pass
     for candidate in _normalize_path_variants(path_like):
         try:
             if candidate.exists():
                 return True
         except Exception:
-            # Fall through and try other variants
             pass
     return False
 
