@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 
 from django.conf import settings
 from apps.common.files import normalized_path_exists
+from django.core.files.storage import default_storage
 from openai import OpenAI
 
 logger = logging.getLogger("grading")
@@ -89,9 +90,29 @@ Bạn phải trả về một đối tượng JSON duy nhất với cấu trúc 
 """
 
 
+def _read_image_bytes(path_or_key: str) -> bytes:
+	"""Load image bytes from storage if key exists, otherwise filesystem.
+
+	Raises FileNotFoundError if neither source has the object.
+	"""
+	# Prefer storage when present (S3/Supabase)
+	try:
+		if default_storage.exists(path_or_key):
+			with default_storage.open(path_or_key, "rb") as fh:
+				return fh.read()
+	except Exception:
+		# fall back to filesystem path
+		pass
+
+	p = Path(path_or_key)
+	if not p.exists():
+		raise FileNotFoundError(f"Image not found: {path_or_key}")
+	with p.open("rb") as f:
+		return f.read()
+
+
 def _encode_image(image_path: str) -> str:
-	with open(image_path, "rb") as f:
-		return base64.b64encode(f.read()).decode("utf-8")
+	return base64.b64encode(_read_image_bytes(image_path)).decode("utf-8")
 
 
 def _get_mime(path: str) -> str:
@@ -166,9 +187,11 @@ def solve_question(question_image_paths: List[str]) -> Dict[str, Any]:
 
 	# attach images
 	for p in question_image_paths:
-		if not normalized_path_exists(p):
+		# Load from storage or filesystem; raise if missing
+		try:
+			b64 = _encode_image(p)
+		except FileNotFoundError:
 			raise FileNotFoundError(f"Question image not found: {p}")
-		b64 = _encode_image(p)
 		mime = _get_mime(p)
 		messages[1]["content"].append({
 			"type": "image_url",

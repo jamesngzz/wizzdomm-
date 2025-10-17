@@ -109,7 +109,8 @@ _static_candidates = [
 STATICFILES_DIRS = [p for p in _static_candidates if p.exists()]
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+from pathlib import Path as _Path
+MEDIA_ROOT = _Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
 
 # Media subfolders
 MEDIA_EXAMS_DIR = MEDIA_ROOT / "exams"
@@ -128,6 +129,22 @@ for _d in [
     MEDIA_EXPORTS_DIR,
 ]:
     os.makedirs(_d, exist_ok=True)
+
+# Storage backend toggle (local or s3-compatible)
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local").lower()
+if STORAGE_BACKEND == "s3":
+    DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+    AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+    AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME")
+    AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")
+    AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
+    AWS_S3_ADDRESSING_STYLE = os.getenv("AWS_S3_ADDRESSING_STYLE", "path")
+    AWS_S3_SIGNATURE_VERSION = os.getenv("AWS_S3_SIGNATURE_VERSION", "s3v4")
+    AWS_S3_CUSTOM_DOMAIN = os.getenv("AWS_S3_CUSTOM_DOMAIN")
+    # Public media URL (Supabase public domain recommended)
+    if AWS_S3_CUSTOM_DOMAIN:
+        MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
 
 # Upload limits and formats
 MAX_IMAGE_SIZE_MB = float(os.getenv("MAX_IMAGE_SIZE_MB", "50"))
