@@ -166,10 +166,15 @@ REST_FRAMEWORK = {
 # Channels – use Redis in production if CHANNEL_REDIS_URL is provided; fallback to in-memory for dev
 _channel_redis_url = os.getenv("CHANNEL_REDIS_URL")
 if _channel_redis_url:
+    # Explicit TLS and reasonable defaults to avoid reconnect storms
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {"hosts": [_channel_redis_url]},
+            "CONFIG": {
+                "hosts": [{"address": _channel_redis_url, "ssl": True}],
+                "capacity": int(os.getenv("CHANNEL_CAPACITY", "1000")),
+                "group_expiry": int(os.getenv("CHANNEL_GROUP_EXPIRY", "3600")),
+            },
         }
     }
 else:
