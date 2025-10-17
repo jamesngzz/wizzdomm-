@@ -60,6 +60,7 @@ services:
     runtime: docker
     plan: starter
     dockerCommand: python manage.py run_job_worker
+    numInstances: 3
     envVars:
       - key: SECRET_KEY
         sync: false
