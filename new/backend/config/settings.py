@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from urllib.parse import urlparse
 import dj_database_url
 
 
@@ -166,12 +167,18 @@ REST_FRAMEWORK = {
 # Channels – use Redis in production if CHANNEL_REDIS_URL is provided; fallback to in-memory for dev
 _channel_redis_url = os.getenv("CHANNEL_REDIS_URL")
 if _channel_redis_url:
-    # Explicit TLS and reasonable defaults to avoid reconnect storms
+    # Derive TLS from URL scheme; optionally upgrade to rediss:// if requested
+    parsed = urlparse(_channel_redis_url)
+    address = _channel_redis_url
+    if parsed.scheme == "redis" and os.getenv("CHANNEL_REDIS_USE_SSL", "false").lower() in {"1", "true", "yes"}:
+        address = _channel_redis_url.replace("redis://", "rediss://", 1)
+
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
             "CONFIG": {
-                "hosts": [{"address": _channel_redis_url, "ssl": True}],
+                # channels_redis infers TLS from rediss://; do not pass unsupported ssl kw
+                "hosts": [address],
                 "capacity": int(os.getenv("CHANNEL_CAPACITY", "1000")),
                 "group_expiry": int(os.getenv("CHANNEL_GROUP_EXPIRY", "3600")),
             },
