@@ -33,6 +33,7 @@ INSTALLED_APPS = [
 
 
 MIDDLEWARE = [
+    "django.middleware.gzip.GZipMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -193,6 +194,10 @@ else:
 
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Respect proxy headers (Render) so scheme/host are correct
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
 
 # CORS
 CORS_ALLOW_ALL_ORIGINS = True
