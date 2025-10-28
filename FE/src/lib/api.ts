@@ -17,6 +17,13 @@ const getDefaultWsUrl = () => {
 
 export const WS_URL = (import.meta as any).env?.VITE_WS_URL || getDefaultWsUrl();
 
+function normalizeArrayResponse<T>(data: any): T[] {
+  if (Array.isArray(data)) return data as T[];
+  if (data && Array.isArray((data as any).results)) return (data as any).results as T[];
+  if (data && Array.isArray((data as any).items)) return (data as any).items as T[];
+  return [] as T[];
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -38,7 +45,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // Exams
-export const listExams = (): Promise<Exam[]> => request<Exam[]>(`/exams/`);
+export const listExams = async (): Promise<Exam[]> => {
+  const data = await request<any>(`/exams/`);
+  return normalizeArrayResponse<Exam>(data);
+};
 
 export const createExam = (payload: { name: string; topic: string; grade_level: string }): Promise<Exam> =>
   request<Exam>(`/exams/`, {
@@ -98,7 +108,10 @@ export const appendQuestionImage = (questionId: number, payload: { page_index: n
   });
 
 // Submissions
-export const listSubmissions = (): Promise<Submission[]> => request(`/submissions/`);
+export const listSubmissions = async (): Promise<Submission[]> => {
+  const data = await request<any>(`/submissions/`);
+  return normalizeArrayResponse<Submission>(data);
+};
 
 export const createSubmission = (payload: { exam: number; student_name: string }): Promise<Submission> =>
   request(`/submissions/`, {
