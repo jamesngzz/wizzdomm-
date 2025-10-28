@@ -2,6 +2,9 @@ import json
 import time
 from contextlib import contextmanager
 from datetime import datetime
+from django.utils import timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -113,8 +116,67 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         run_once = options.get("once", False)
+        grading_workers = int(os.getenv("GRADING_WORKERS", "4"))
+        batch_size = int(os.getenv("JOB_BATCH_SIZE", "8"))
         while True:
             # Fetch next job with resilience to transient DB errors
+            try:
+                # Try to claim a batch of grading jobs first
+                grading_ids = list(
+                    Job.objects.filter(status=Job.Status.PENDING, type="GRADE_ITEM").order_by("created_at").values_list("id", flat=True)[:batch_size]
+                )
+            except Exception:
+                # DB not ready / connection refused: backoff and retry
+                if run_once:
+                    raise
+                time.sleep(3)
+                continue
+            if grading_ids:
+                claimed = []
+                for jid in grading_ids:
+                    try:
+                        with locked_job(jid) as job:
+                            job.refresh_from_db()
+                            if job.status != Job.Status.PENDING:
+                                continue
+                            job.status = Job.Status.RUNNING
+                            job.started_at = timezone.now()
+                            job.save(update_fields=["status", "started_at"])
+                            claimed.append(job)
+                    except Exception:
+                        continue
+                if claimed:
+                    with ThreadPoolExecutor(max_workers=max(1, grading_workers)) as executor:
+                        futures = [executor.submit(HANDLERS[j.type], j) for j in claimed]
+                        for fut, j in zip(as_completed(futures), claimed):
+                            try:
+                                result = fut.result()
+                                j.refresh_from_db()
+                                j.status = Job.Status.SUCCEEDED
+                                j.result = result
+                                j.finished_at = timezone.now()
+                                j.save(update_fields=["status", "result", "finished_at"])
+                                try:
+                                    channel_layer = get_channel_layer()
+                                    async_to_sync(channel_layer.group_send)(
+                                        "notifications",
+                                        {"type": "notify", "payload": {"event": j.type, "job_id": j.id, "status": j.status, "result": j.result}},
+                                    )
+                                except Exception:
+                                    pass
+                            except Exception as e:
+                                j.refresh_from_db()
+                                j.status = Job.Status.FAILED
+                                j.error = str(e)
+                                j.retries += 1
+                                j.finished_at = timezone.now()
+                                j.save(update_fields=["status", "error", "retries", "finished_at"])
+                    if run_once:
+                        return
+                    time.sleep(0.1)
+                    continue
+
+            # Fallback: single oldest job of any type
             try:
                 job = (
                     Job.objects
@@ -123,7 +185,6 @@ class Command(BaseCommand):
                     .first()
                 )
             except Exception:
-                # DB not ready / connection refused: backoff and retry
                 if run_once:
                     raise
                 time.sleep(3)
@@ -140,7 +201,7 @@ class Command(BaseCommand):
                     if job.status != Job.Status.PENDING:
                         continue
                     job.status = Job.Status.RUNNING
-                    job.started_at = datetime.utcnow()
+                    job.started_at = timezone.now()
                     job.save(update_fields=["status", "started_at"])
 
                 handler = HANDLERS.get(job.type)
@@ -151,7 +212,7 @@ class Command(BaseCommand):
                 job.refresh_from_db()
                 job.status = Job.Status.SUCCEEDED
                 job.result = result
-                job.finished_at = datetime.utcnow()
+                job.finished_at = timezone.now()
                 job.save(update_fields=["status", "result", "finished_at"])
                 # Emit websocket notification
                 try:
@@ -167,7 +228,7 @@ class Command(BaseCommand):
                 job.status = Job.Status.FAILED
                 job.error = str(e)
                 job.retries += 1
-                job.finished_at = datetime.utcnow()
+                job.finished_at = timezone.now()
                 job.save(update_fields=["status", "error", "retries", "finished_at"])
             finally:
                 if run_once:
