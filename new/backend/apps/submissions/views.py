@@ -127,8 +127,10 @@ def sanitize_saved_lines(saved_lines):
 
 
 class SubmissionViewSet(viewsets.ModelViewSet):
+    # Keep legacy array responses for FE compatibility where needed
     queryset = Submission.objects.all().order_by("-id")
     serializer_class = SubmissionSerializer
+    pagination_class = None
 
     @action(detail=True, methods=["post"], url_path="upload")
     def upload(self, request, pk=None):

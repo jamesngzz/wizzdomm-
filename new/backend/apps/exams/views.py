@@ -30,6 +30,8 @@ from .solver import solve_question
 
 
 class ExamViewSet(viewsets.ModelViewSet):
+    # Keep legacy array responses for FE compatibility
+    pagination_class = None
     queryset = Exam.objects.all().order_by("-id")
     serializer_class = ExamSerializer
 

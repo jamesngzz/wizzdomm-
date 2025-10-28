@@ -114,12 +114,20 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         run_once = options.get("once", False)
         while True:
-            job = (
-                Job.objects
-                .filter(status=Job.Status.PENDING)
-                .order_by("created_at")
-                .first()
-            )
+            # Fetch next job with resilience to transient DB errors
+            try:
+                job = (
+                    Job.objects
+                    .filter(status=Job.Status.PENDING)
+                    .order_by("created_at")
+                    .first()
+                )
+            except Exception:
+                # DB not ready / connection refused: backoff and retry
+                if run_once:
+                    raise
+                time.sleep(3)
+                continue
             if not job:
                 if run_once:
                     return
