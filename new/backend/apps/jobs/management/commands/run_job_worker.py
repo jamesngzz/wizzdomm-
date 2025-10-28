@@ -14,6 +14,12 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from apps.submissions.models import SubmissionItem
 from apps.submissions.grading import grade_item_and_persist
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from pdf2image import convert_from_path
+from tempfile import NamedTemporaryFile
+from apps.exams.models import Exam
+from apps.submissions.models import Submission
 
 
 @contextmanager
@@ -34,9 +40,68 @@ def handle_upscale(job: Job):
     return {"upscaled_paths": out_paths}
 
 
+def handle_pdf_convert_exam(job: Job):
+    payload = job.payload or {}
+    exam_id = payload.get("exam_id")
+    pdf_key = payload.get("pdf_key")
+    target_dir = Path(payload.get("target_dir"))
+    if not (exam_id and pdf_key and target_dir):
+        raise ValueError("Missing exam_id/pdf_key/target_dir")
+    # Download PDF to temp, convert to images, store via storage
+    with default_storage.open(pdf_key, "rb") as src, NamedTemporaryFile(suffix=".pdf") as tmp:
+        tmp.write(src.read())
+        tmp.flush()
+        pages = convert_from_path(tmp.name, dpi=200)
+    image_paths = []
+    for idx, page in enumerate(pages, 1):
+        img_name = f"page_{idx:03d}.jpg"
+        img_key = str(target_dir / img_name)
+        buf = NamedTemporaryFile(suffix=".jpg")
+        page.save(buf.name, "JPEG", quality=95)
+        with open(buf.name, "rb") as fh:
+            default_storage.save(img_key, ContentFile(fh.read()))
+        image_paths.append(img_key)
+    # Update exam
+    exam = Exam.objects.get(id=exam_id)
+    existing = exam.original_image_paths or []
+    exam.original_image_paths = existing + image_paths
+    exam.save(update_fields=["original_image_paths"])
+    return {"count": len(image_paths), "paths": image_paths}
+
+
+def handle_pdf_convert_submission(job: Job):
+    payload = job.payload or {}
+    submission_id = payload.get("submission_id")
+    pdf_key = payload.get("pdf_key")
+    target_dir = Path(payload.get("target_dir"))
+    if not (submission_id and pdf_key and target_dir):
+        raise ValueError("Missing submission_id/pdf_key/target_dir")
+    with default_storage.open(pdf_key, "rb") as src, NamedTemporaryFile(suffix=".pdf") as tmp:
+        tmp.write(src.read())
+        tmp.flush()
+        pages = convert_from_path(tmp.name, dpi=200)
+    image_paths = []
+    for idx, page in enumerate(pages, 1):
+        img_name = f"page_{idx:03d}.jpg"
+        img_key = str(target_dir / img_name)
+        buf = NamedTemporaryFile(suffix=".jpg")
+        page.save(buf.name, "JPEG", quality=95)
+        with open(buf.name, "rb") as fh:
+            default_storage.save(img_key, ContentFile(fh.read()))
+        image_paths.append(img_key)
+    # Update submission
+    submission = Submission.objects.get(id=submission_id)
+    existing = submission.original_image_paths or []
+    submission.original_image_paths = existing + image_paths
+    submission.save(update_fields=["original_image_paths"])
+    return {"count": len(image_paths), "paths": image_paths}
+
+
 HANDLERS = {
     "UPSCALE_SUBMISSION": handle_upscale,
     "GRADE_ITEM": lambda job: (grade_item_and_persist(SubmissionItem.objects.get(id=job.payload.get("submission_item_id"))) or {"graded": True}),
+    "PDF_CONVERT_EXAM": handle_pdf_convert_exam,
+    "PDF_CONVERT_SUBMISSION": handle_pdf_convert_submission,
 }
 
 

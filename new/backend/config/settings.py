@@ -34,6 +34,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.gzip.GZipMiddleware",
+    "config.middleware.RequestTimingMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -162,6 +163,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": int(os.getenv("API_PAGE_SIZE", "20")),
 }
 
 
@@ -198,6 +201,30 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Respect proxy headers (Render) so scheme/host are correct
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
+
+# Cache configuration: prefer Redis (same URL as Channels) else LocMem
+_cache_backend = None
+try:
+    if _channel_redis_url:
+        CACHES = {
+            "default": {
+                "BACKEND": "django.core.cache.backends.redis.RedisCache",
+                "LOCATION": _channel_redis_url,
+                "OPTIONS": {},
+                "TIMEOUT": 60,
+            }
+        }
+        _cache_backend = "redis"
+except Exception:
+    pass
+if not _cache_backend:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "default-locmem",
+            "TIMEOUT": 60,
+        }
+    }
 
 # CORS
 CORS_ALLOW_ALL_ORIGINS = True
@@ -262,3 +289,12 @@ LOGGING = {
         }
     },
 }
+
+# Real-ESRGAN remote HTTP service configuration
+REAL_ESRGAN_HTTP_BASE = os.getenv("REAL_ESRGAN_HTTP_BASE")
+REAL_ESRGAN_HTTP_PATH = os.getenv("REAL_ESRGAN_HTTP_PATH", "/upscale")
+REAL_ESRGAN_API_KEY = os.getenv("REAL_ESRGAN_API_KEY")
+REAL_ESRGAN_HTTP_AUTH_HEADER = os.getenv("REAL_ESRGAN_HTTP_AUTH_HEADER", "X-API-Key")
+REAL_ESRGAN_BIN = os.getenv("REAL_ESRGAN_BIN")
+REAL_ESRGAN_MODEL = os.getenv("REAL_ESRGAN_MODEL", "realesrgan-x4plus")
+REAL_ESRGAN_SCALE = int(os.getenv("REAL_ESRGAN_SCALE", "2"))

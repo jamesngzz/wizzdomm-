@@ -9,6 +9,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from PIL import Image
+from io import BytesIO
 from pdf2image import convert_from_path
 
 
@@ -56,6 +57,15 @@ def _to_key(target_dir: Path, filename: str) -> str:
     return f"{base}/{filename}" if base else filename
 
 
+def _make_thumbnail(img: Image.Image, max_px: int = 1280) -> BytesIO:
+    img = img.copy()
+    img.thumbnail((max_px, max_px))
+    buf = BytesIO()
+    img.save(buf, "JPEG", quality=85, optimize=True)
+    buf.seek(0)
+    return buf
+
+
 def save_uploaded_image(upload: UploadedFile, target_dir: Path, prefix: str = "") -> Path:
     """Save an uploaded image using the active storage backend.
 
@@ -66,9 +76,15 @@ def save_uploaded_image(upload: UploadedFile, target_dir: Path, prefix: str = ""
     # Write via storage
     content = ContentFile(b"".join(upload.chunks()))
     default_storage.save(key, content)
-    # Verify image by opening back from storage
-    with default_storage.open(key, "rb") as fh:
-        Image.open(fh).verify()
+    # Generate and store thumbnail for list views
+    try:
+        with default_storage.open(key, "rb") as fh:
+            img = Image.open(fh)
+            thumb = _make_thumbnail(img)
+        tkey = _to_key(target_dir, f"thumb_{Path(filename).stem}.jpg")
+        default_storage.save(tkey, ContentFile(thumb.getvalue()))
+    except Exception:
+        pass
     return Path(key)
 
 
@@ -98,6 +114,13 @@ def save_uploaded_pdf(upload: UploadedFile, target_dir: Path, prefix: str = "", 
         buf = BytesIO()
         page.save(buf, "JPEG", quality=95)
         default_storage.save(img_key, ContentFile(buf.getvalue()))
+        # Thumbnail
+        try:
+            thumb = _make_thumbnail(page)
+            tkey = _to_key(target_dir, f"thumb_{Path(img_name).stem}.jpg")
+            default_storage.save(tkey, ContentFile(thumb.getvalue()))
+        except Exception:
+            pass
         image_paths.append(Path(img_key))
     return image_paths
 

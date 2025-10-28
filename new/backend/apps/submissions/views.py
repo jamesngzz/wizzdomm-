@@ -2,6 +2,8 @@ from typing import List
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -144,8 +146,17 @@ class SubmissionViewSet(viewsets.ModelViewSet):
                 ok, msg = validate_pdf_file(f)
                 if not ok:
                     return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
-                images = save_uploaded_pdf(f, target_dir, prefix=f"sub{submission.id}")
-                saved_paths.extend([str(p) for p in images])
+                # Save raw PDF to storage first
+                pdf_filename = f"sub{submission.id}_upload.pdf"
+                from apps.common.files import _to_key
+                pdf_key = _to_key(target_dir, pdf_filename)
+                default_storage.save(pdf_key, ContentFile(b"".join(f.chunks())))
+                # Enqueue background conversion
+                enqueue("PDF_CONVERT_SUBMISSION", {
+                    "submission_id": submission.id,
+                    "pdf_key": pdf_key,
+                    "target_dir": str(target_dir),
+                })
             else:
                 ok, msg = validate_image_file(f)
                 if not ok:
@@ -163,8 +174,9 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
-        return Response({"image_paths": submission.original_image_paths}, status=status.HTTP_200_OK)
+        return Response({"image_paths": submission.original_image_paths, "status": "processing"}, status=status.HTTP_202_ACCEPTED)
 
+    @method_decorator(cache_page(30))
     @action(detail=True, methods=["get"], url_path="images")
     def images(self, request, pk=None):
         submission = get_object_or_404(Submission, pk=pk)
@@ -173,10 +185,23 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         for p in paths:
             try:
                 sp = str(p)
-                if default_storage.exists(sp):
-                    urls.append(default_storage.url(sp))
-                else:
-                    urls.append(request.build_absolute_uri(f"{settings.MEDIA_URL.rstrip('/')}/{sp.lstrip('/')}"))
+                # Prefer thumbnail if present
+                tkey = str(PurePosixPath(sp).with_name(f"thumb_{PurePosixPath(sp).stem}.jpg"))
+                try:
+                    tu = default_storage.url(tkey)
+                    if tu:
+                        urls.append(tu)
+                        continue
+                except Exception:
+                    pass
+                try:
+                    u = default_storage.url(sp)
+                    if u:
+                        urls.append(u)
+                        continue
+                except Exception:
+                    pass
+                urls.append(request.build_absolute_uri(f"{settings.MEDIA_URL.rstrip('/')}/{sp.lstrip('/')}"))
             except Exception:
                 urls.append(str(p))
         return Response({"count": len(urls), "urls": urls})
@@ -229,7 +254,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
                 src_path = Path(tmp.name)
         else:
             src_path = Path(pref)
-            if not src_path.exists():
+            if not normalized_path_exists(src_path):
                 return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:

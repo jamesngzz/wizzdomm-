@@ -3,6 +3,8 @@ from typing import List
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -47,8 +49,17 @@ class ExamViewSet(viewsets.ModelViewSet):
                 ok, msg = validate_pdf_file(f)
                 if not ok:
                     return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
-                images = save_uploaded_pdf(f, target_dir, prefix=f"exam{exam.id}")
-                saved_paths.extend([str(p) for p in images])
+                # Save raw PDF then convert in background
+                from apps.common.files import _to_key
+                pdf_filename = f"exam{exam.id}_upload.pdf"
+                pdf_key = _to_key(target_dir, pdf_filename)
+                default_storage.save(pdf_key, ContentFile(b"".join(f.chunks())))
+                from apps.jobs.services import enqueue
+                enqueue("PDF_CONVERT_EXAM", {
+                    "exam_id": exam.id,
+                    "pdf_key": pdf_key,
+                    "target_dir": str(target_dir),
+                })
             else:
                 ok, msg = validate_image_file(f)
                 if not ok:
@@ -62,8 +73,9 @@ class ExamViewSet(viewsets.ModelViewSet):
         exam.original_image_paths = merged
         exam.save(update_fields=["original_image_paths"])
 
-        return Response({"image_paths": merged}, status=status.HTTP_200_OK)
+        return Response({"image_paths": merged, "status": "processing"}, status=status.HTTP_202_ACCEPTED)
 
+    @method_decorator(cache_page(30))
     @action(detail=True, methods=["get"], url_path="images")
     def images(self, request, pk=None):
         exam = get_object_or_404(Exam, pk=pk)
@@ -74,22 +86,17 @@ class ExamViewSet(viewsets.ModelViewSet):
         for p in paths:
             try:
                 sp = str(p)
-                # If the entry is a storage key, return a fully-qualified URL from storage
-                if default_storage.exists(sp):
-                    urls.append(default_storage.url(sp))
-                    continue
-
-                # Handle Unicode normalization issues by normalizing both paths
-                import unicodedata
-                normalized_path = unicodedata.normalize('NFC', sp)
-                normalized_media_root = unicodedata.normalize('NFC', media_root)
-                if normalized_path.startswith(normalized_media_root):
-                    rel = normalized_path[len(normalized_media_root):].lstrip("/")
-                    urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
-                else:
-                    # treat as relative to MEDIA_URL
-                    rel = sp.lstrip("/")
-                    urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
+                # Fast-path: build URL without storage.exists() HEAD roundtrip
+                try:
+                    u = default_storage.url(sp)
+                    if u:
+                        urls.append(u)
+                        continue
+                except Exception:
+                    pass
+                # Fallback to MEDIA_URL relative
+                rel = sp.lstrip("/")
+                urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
             except Exception:
                 urls.append(p)
         return Response({"count": len(urls), "urls": urls})
