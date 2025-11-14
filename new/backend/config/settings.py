@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "apps.exams",
     "apps.submissions",
     "apps.jobs",
+    "apps.grading",
 ]
 
 
@@ -68,23 +69,51 @@ WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
 
-_database_url = os.getenv("DATABASE_URL")
-if _database_url:
-    # Prefer DATABASE_URL (e.g., Supabase). Enforce SSL and reuse connections.
+# Simple database switching for testing
+_use_sqlite = os.getenv("USE_SQLITE", "false").lower() == "true"
+USE_TEST_DB = os.getenv("USE_TEST_DB", "false").lower() == "true"
+TEST_DB_PATH = BASE_DIR / "db_test.sqlite3"
+
+# Test database for new data model v2 (isolated from production)
+if USE_TEST_DB:
     DATABASES = {
-        "default": dj_database_url.parse(_database_url, conn_max_age=600, ssl_require=True)
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': TEST_DB_PATH,
+        }
     }
-    # With managed poolers (e.g., Supabase PgBouncer), persistent connections can exhaust pool.
-    # Default to short-lived connections; override via CONN_MAX_AGE env if needed.
-    try:
-        DATABASES["default"]["CONN_MAX_AGE"] = int(os.getenv("CONN_MAX_AGE", "0"))
-    except Exception:
-        DATABASES["default"]["CONN_MAX_AGE"] = 0
-    # Avoid server-side cursors when behind transaction poolers
-    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    print(f"⚠️  USING TEST DATABASE (v2): {TEST_DB_PATH}")
+elif _use_sqlite:
+    # Use SQLite for testing (no connection limits!)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 else:
-    # In production we require DATABASE_URL; fail fast to avoid silent SQLite fallback
-    raise RuntimeError("DATABASE_URL must be set in production")
+    # Use production database (Supabase)
+    _database_url = os.getenv("DATABASE_URL")
+    if _database_url:
+        # Prefer DATABASE_URL (e.g., Supabase). For sqlite, avoid ssl options.
+        parsed_url = urlparse(_database_url)
+        if parsed_url.scheme.startswith("sqlite"):
+            DATABASES = {"default": dj_database_url.parse(_database_url)}
+        else:
+            DATABASES = {
+                "default": dj_database_url.parse(_database_url, conn_max_age=600, ssl_require=True)
+            }
+        # With managed poolers (e.g., Supabase PgBouncer), persistent connections can exhaust pool.
+        # Default to short-lived connections; override via CONN_MAX_AGE env if needed.
+        try:
+            DATABASES["default"]["CONN_MAX_AGE"] = int(os.getenv("CONN_MAX_AGE", "0"))
+        except Exception:
+            DATABASES["default"]["CONN_MAX_AGE"] = 0
+        # Avoid server-side cursors when behind transaction poolers
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    else:
+        # In production we require DATABASE_URL; fail fast to avoid silent SQLite fallback
+        raise RuntimeError("DATABASE_URL must be set in production")
 
 
 LANGUAGE_CODE = "en-us"
