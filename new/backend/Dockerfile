@@ -13,4 +13,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app
 
 ENV PYTHONUNBUFFERED=1
-CMD uvicorn config.asgi:application --host 0.0.0.0 --port $PORT
+CMD uvicorn config.asgi:application --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"

@@ -11,6 +11,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "exam",
             "student_name",
             "original_image_paths",
+            "flagged_for_human",
             "created_at",
         ]
         read_only_fields = ["id", "original_image_paths", "created_at"]

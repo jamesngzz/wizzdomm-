@@ -3,6 +3,8 @@ from typing import List
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -15,7 +17,12 @@ from apps.common.files import (
     delete_image_files,
 )
 from pathlib import Path
+from io import BytesIO
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from apps.common.image_ops import crop_bbox
+from django.core.files.storage import default_storage
+from tempfile import NamedTemporaryFile
 from apps.common.labels import parse_question_label
 from .models import Exam, Question
 from .serializers import ExamSerializer, QuestionSerializer
@@ -23,6 +30,8 @@ from .solver import solve_question
 
 
 class ExamViewSet(viewsets.ModelViewSet):
+    # Keep legacy array responses for FE compatibility
+    pagination_class = None
     queryset = Exam.objects.all().order_by("-id")
     serializer_class = ExamSerializer
 
@@ -42,8 +51,17 @@ class ExamViewSet(viewsets.ModelViewSet):
                 ok, msg = validate_pdf_file(f)
                 if not ok:
                     return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
-                images = save_uploaded_pdf(f, target_dir, prefix=f"exam{exam.id}")
-                saved_paths.extend([str(p) for p in images])
+                # Save raw PDF then convert in background
+                from apps.common.files import _to_key
+                pdf_filename = f"exam{exam.id}_upload.pdf"
+                pdf_key = _to_key(target_dir, pdf_filename)
+                default_storage.save(pdf_key, ContentFile(b"".join(f.chunks())))
+                from apps.jobs.services import enqueue
+                enqueue("PDF_CONVERT_EXAM", {
+                    "exam_id": exam.id,
+                    "pdf_key": pdf_key,
+                    "target_dir": str(target_dir),
+                })
             else:
                 ok, msg = validate_image_file(f)
                 if not ok:
@@ -57,8 +75,9 @@ class ExamViewSet(viewsets.ModelViewSet):
         exam.original_image_paths = merged
         exam.save(update_fields=["original_image_paths"])
 
-        return Response({"image_paths": merged}, status=status.HTTP_200_OK)
+        return Response({"image_paths": merged, "status": "processing"}, status=status.HTTP_202_ACCEPTED)
 
+    @method_decorator(cache_page(30))
     @action(detail=True, methods=["get"], url_path="images")
     def images(self, request, pk=None):
         exam = get_object_or_404(Exam, pk=pk)
@@ -69,18 +88,17 @@ class ExamViewSet(viewsets.ModelViewSet):
         for p in paths:
             try:
                 sp = str(p)
-                # Handle Unicode normalization issues by normalizing both paths
-                import unicodedata
-                normalized_path = unicodedata.normalize('NFC', sp)
-                normalized_media_root = unicodedata.normalize('NFC', media_root)
-                
-                if normalized_path.startswith(normalized_media_root):
-                    rel = normalized_path[len(normalized_media_root):].lstrip("/")
-                    # Build absolute URL so FE on a different port can load it
-                    urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
-                else:
-                    # fallback: return as-is; browser may still access if served
-                    urls.append(sp)
+                # Fast-path: build URL without storage.exists() HEAD roundtrip
+                try:
+                    u = default_storage.url(sp)
+                    if u:
+                        urls.append(u)
+                        continue
+                except Exception:
+                    pass
+                # Fallback to MEDIA_URL relative
+                rel = sp.lstrip("/")
+                urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
             except Exception:
                 urls.append(p)
         return Response({"count": len(urls), "urls": urls})
@@ -123,9 +141,19 @@ class QuestionViewSet(viewsets.GenericViewSet):
         if page_index < 0 or page_index >= len(paths):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
 
-        src_path = Path(paths[page_index])
-        if not src_path.exists():
-            return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
+        # Resolve source image from storage or filesystem
+        raw = str(paths[page_index])
+        src_path: Path
+        if default_storage.exists(raw):
+            # Pull object to temp file for cropping
+            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+                tmp.write(src.read())
+                tmp.flush()
+                src_path = Path(tmp.name)
+        else:
+            src_path = Path(raw)
+            if not src_path.exists():
+                return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
 
         # crop
         try:
@@ -133,17 +161,17 @@ class QuestionViewSet(viewsets.GenericViewSet):
         except Exception as e:
             return Response({"detail": f"Crop failed: {e}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # save
-        q_dir = settings.MEDIA_QUESTIONS_DIR / f"exam_{exam.id}"
-        q_dir.mkdir(parents=True, exist_ok=True)
+        # save via storage (S3 or local)
         order_index, part_label = parse_question_label(label)
         filename = f"q_{order_index}{part_label or ''}_{src_path.stem}.jpg"
-        out_path = q_dir / filename
-        cropped.save(out_path, "JPEG", quality=95)
+        key = f"questions/exam_{exam.id}/{filename}"
+        buf = BytesIO()
+        cropped.save(buf, "JPEG", quality=95)
+        default_storage.save(key, ContentFile(buf.getvalue()))
 
         question = Question.objects.create(
             exam=exam,
-            question_image_paths=[str(out_path)],
+            question_image_paths=[key],
             has_multiple_images=False,
             order_index=order_index,
             part_label=part_label,
@@ -198,15 +226,18 @@ class QuestionViewSet(viewsets.GenericViewSet):
         for p in paths:
             try:
                 sp = str(p)
+                if default_storage.exists(sp):
+                    urls.append(default_storage.url(sp))
+                    continue
                 import unicodedata
                 normalized_path = unicodedata.normalize('NFC', sp)
                 normalized_media_root = unicodedata.normalize('NFC', media_root)
-                
                 if normalized_path.startswith(normalized_media_root):
                     rel = normalized_path[len(normalized_media_root):].lstrip("/")
                     urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
                 else:
-                    urls.append(sp)
+                    rel = sp.lstrip("/")
+                    urls.append(request.build_absolute_uri(f"{media_url}/{rel}"))
             except Exception:
                 urls.append(p)
         return Response({
@@ -265,9 +296,16 @@ class QuestionViewSet(viewsets.GenericViewSet):
         if page_index < 0 or page_index >= len(paths):
             return Response({"detail": "Invalid page_index"}, status=status.HTTP_400_BAD_REQUEST)
         
-        src_path = Path(paths[page_index])
-        if not src_path.exists():
-            return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
+        raw = str(paths[page_index])
+        if default_storage.exists(raw):
+            with default_storage.open(raw, "rb") as src, NamedTemporaryFile(suffix=Path(raw).suffix, delete=False) as tmp:
+                tmp.write(src.read())
+                tmp.flush()
+                src_path = Path(tmp.name)
+        else:
+            src_path = Path(raw)
+            if not src_path.exists():
+                return Response({"detail": "Source image not found"}, status=status.HTTP_400_BAD_REQUEST)
         
         # Crop the image
         try:
@@ -275,17 +313,17 @@ class QuestionViewSet(viewsets.GenericViewSet):
         except Exception as e:
             return Response({"detail": f"Crop failed: {e}"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Save with unique filename
-        q_dir = settings.MEDIA_QUESTIONS_DIR / f"exam_{exam.id}"
-        q_dir.mkdir(parents=True, exist_ok=True)
+        # Save with unique filename via storage
         import uuid
         filename = f"q_{question.order_index}{question.part_label or ''}_{uuid.uuid4().hex[:8]}.jpg"
-        out_path = q_dir / filename
-        cropped.save(out_path, "JPEG", quality=95)
+        key = f"questions/exam_{exam.id}/{filename}"
+        buf = BytesIO()
+        cropped.save(buf, "JPEG", quality=95)
+        default_storage.save(key, ContentFile(buf.getvalue()))
         
         # Append to existing paths
         existing_paths = question.question_image_paths or []
-        existing_paths.append(str(out_path))
+        existing_paths.append(key)
         question.question_image_paths = existing_paths
         question.has_multiple_images = len(existing_paths) > 1
         question.save(update_fields=["question_image_paths", "has_multiple_images"])
