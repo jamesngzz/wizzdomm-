@@ -14,74 +14,92 @@ type WebSocketHook = {
   sendMessage: (msg: any) => void;
 };
 
+// --- Singleton connection across the app (one socket per tab) ---
+let singletonWs: WebSocket | null = null;
+let heartbeatTimer: any = null;
+let reconnectTimer: any = null;
+let closed = false;
+let backoff = 1000; // start 1s
+const listeners = new Set<(msg: WebSocketMessage) => void>();
+let connectedFlag = false;
+const subscribers = new Set<(state: boolean) => void>();
+
+function notifyConnected(val: boolean) {
+  connectedFlag = val;
+  subscribers.forEach((fn) => { try { fn(val); } catch {} });
+}
+
+function ensureSocket() {
+  if (singletonWs && (singletonWs.readyState === WebSocket.OPEN || singletonWs.readyState === WebSocket.CONNECTING)) {
+    return;
+  }
+  try {
+    const ws = new WebSocket(WS_URL);
+    singletonWs = ws;
+    ws.onopen = () => {
+      notifyConnected(true);
+      backoff = 1000;
+      // Heartbeat every 25s
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => { try { ws.send(JSON.stringify({ type: "ping" })); } catch {} }, 25000);
+    };
+    ws.onmessage = (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        listeners.forEach((fn) => { try { fn(data); } catch {} });
+      } catch {}
+    };
+    ws.onerror = () => { try { ws.close(); } catch {} };
+    ws.onclose = () => {
+      notifyConnected(false);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (!closed) {
+        const next = Math.min(backoff * 2, 30000);
+        const jitter = Math.floor(Math.random() * 500);
+        backoff = next;
+        reconnectTimer = setTimeout(() => ensureSocket(), next + jitter);
+      }
+    };
+  } catch {
+    const next = Math.min(backoff * 2, 30000);
+    backoff = next;
+    reconnectTimer = setTimeout(() => ensureSocket(), next);
+  }
+}
+
 export function useWebSocket(onMessage?: (msg: WebSocketMessage) => void): WebSocketHook {
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState<boolean>(connectedFlag);
   const [message, setMessage] = useState<WebSocketMessage | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const localListener = useRef<(msg: WebSocketMessage) => void>();
 
-  const connect = useCallback(() => {
-    try {
-      const ws = new WebSocket(WS_URL);
-      
-      ws.onopen = () => {
-        console.log("[WebSocket] Connected");
-        setConnected(true);
-      };
+  useEffect(() => {
+    // subscribe to connection state updates
+    const s = (v: boolean) => setConnected(v);
+    subscribers.add(s);
+    // create the socket if needed
+    ensureSocket();
+    return () => { subscribers.delete(s); };
+  }, []);
 
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log("[WebSocket] Received:", data);
-          setMessage(data);
-          if (onMessage) {
-            onMessage(data);
-          }
-        } catch (e) {
-          console.error("[WebSocket] Failed to parse message:", e);
-        }
-      };
-
-      ws.onerror = (error) => {
-        console.error("[WebSocket] Error:", error);
-      };
-
-      ws.onclose = () => {
-        console.log("[WebSocket] Disconnected");
-        setConnected(false);
-        // Attempt to reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log("[WebSocket] Attempting to reconnect...");
-          connect();
-        }, 3000);
-      };
-
-      wsRef.current = ws;
-    } catch (error) {
-      console.error("[WebSocket] Connection failed:", error);
-      // Retry after 5 seconds if initial connection fails
-      reconnectTimeoutRef.current = setTimeout(() => {
-        connect();
-      }, 5000);
-    }
+  useEffect(() => {
+    localListener.current = (data: WebSocketMessage) => {
+      setMessage(data);
+      if (onMessage) { try { onMessage(data); } catch {} }
+    };
+    listeners.add(localListener.current);
+    return () => { if (localListener.current) listeners.delete(localListener.current); };
   }, [onMessage]);
 
   useEffect(() => {
-    connect();
-
     return () => {
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      // do not close global socket here; it is shared by the app
+      if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, [connect]);
+  }, []);
 
   const sendMessage = useCallback((msg: any) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(msg));
+    if (singletonWs && singletonWs.readyState === WebSocket.OPEN) {
+      try { singletonWs.send(JSON.stringify(msg)); } catch {}
     } else {
       console.warn("[WebSocket] Not connected, cannot send message");
     }
