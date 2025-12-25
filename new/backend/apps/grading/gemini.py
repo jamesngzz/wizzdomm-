@@ -57,17 +57,36 @@ class GeminiGrader:
 
         parts: List[types.Part] = [types.Part.from_text(text=initial_text)]
 
+        # Read images from storage when available; fall back to filesystem
+        from django.core.files.storage import default_storage
+        from pathlib import Path as _P
+
+        def _read_bytes(path_or_key: str) -> bytes:
+            try:
+                if default_storage.exists(path_or_key):
+                    with default_storage.open(path_or_key, "rb") as fh:
+                        return fh.read()
+            except Exception:
+                pass
+            p = _P(path_or_key)
+            if not p.exists():
+                raise FileNotFoundError(path_or_key)
+            with p.open("rb") as fh:
+                return fh.read()
+
         for p in question_image_paths:
-            if not os.path.exists(p):
+            try:
+                data = _read_bytes(p)
+            except FileNotFoundError:
                 raise FileNotFoundError(f"Question image not found: {p}")
-            with open(p, "rb") as f:
-                parts.append(types.Part.from_bytes(data=f.read(), mime_type=self._mime(p)))
+            parts.append(types.Part.from_bytes(data=data, mime_type=self._mime(p)))
 
         for p in answer_image_paths:
-            if not os.path.exists(p):
+            try:
+                data = _read_bytes(p)
+            except FileNotFoundError:
                 raise FileNotFoundError(f"Answer image not found: {p}")
-            with open(p, "rb") as f:
-                parts.append(types.Part.from_bytes(data=f.read(), mime_type=self._mime(p)))
+            parts.append(types.Part.from_bytes(data=data, mime_type=self._mime(p)))
 
         self.logger.debug(
             "run=%s prompt_preview=%s q_paths=%s a_paths=%s",

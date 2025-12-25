@@ -6,6 +6,7 @@ class Submission(models.Model):
     exam = models.ForeignKey(Exam, on_delete=models.CASCADE, related_name="submissions")
     student_name = models.CharField(max_length=255)
     original_image_paths = models.JSONField(null=True, blank=True)
+    flagged_for_human = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

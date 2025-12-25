@@ -2,6 +2,9 @@ import json
 import time
 from contextlib import contextmanager
 from datetime import datetime
+from django.utils import timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -14,6 +17,12 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from apps.submissions.models import SubmissionItem
 from apps.submissions.grading import grade_item_and_persist
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from pdf2image import convert_from_path
+from tempfile import NamedTemporaryFile
+from apps.exams.models import Exam
+from apps.submissions.models import Submission
 
 
 @contextmanager
@@ -34,9 +43,68 @@ def handle_upscale(job: Job):
     return {"upscaled_paths": out_paths}
 
 
+def handle_pdf_convert_exam(job: Job):
+    payload = job.payload or {}
+    exam_id = payload.get("exam_id")
+    pdf_key = payload.get("pdf_key")
+    target_dir = Path(payload.get("target_dir"))
+    if not (exam_id and pdf_key and target_dir):
+        raise ValueError("Missing exam_id/pdf_key/target_dir")
+    # Download PDF to temp, convert to images, store via storage
+    with default_storage.open(pdf_key, "rb") as src, NamedTemporaryFile(suffix=".pdf") as tmp:
+        tmp.write(src.read())
+        tmp.flush()
+        pages = convert_from_path(tmp.name, dpi=200)
+    image_paths = []
+    for idx, page in enumerate(pages, 1):
+        img_name = f"page_{idx:03d}.jpg"
+        img_key = str(target_dir / img_name)
+        buf = NamedTemporaryFile(suffix=".jpg")
+        page.save(buf.name, "JPEG", quality=95)
+        with open(buf.name, "rb") as fh:
+            default_storage.save(img_key, ContentFile(fh.read()))
+        image_paths.append(img_key)
+    # Update exam
+    exam = Exam.objects.get(id=exam_id)
+    existing = exam.original_image_paths or []
+    exam.original_image_paths = existing + image_paths
+    exam.save(update_fields=["original_image_paths"])
+    return {"count": len(image_paths), "paths": image_paths}
+
+
+def handle_pdf_convert_submission(job: Job):
+    payload = job.payload or {}
+    submission_id = payload.get("submission_id")
+    pdf_key = payload.get("pdf_key")
+    target_dir = Path(payload.get("target_dir"))
+    if not (submission_id and pdf_key and target_dir):
+        raise ValueError("Missing submission_id/pdf_key/target_dir")
+    with default_storage.open(pdf_key, "rb") as src, NamedTemporaryFile(suffix=".pdf") as tmp:
+        tmp.write(src.read())
+        tmp.flush()
+        pages = convert_from_path(tmp.name, dpi=200)
+    image_paths = []
+    for idx, page in enumerate(pages, 1):
+        img_name = f"page_{idx:03d}.jpg"
+        img_key = str(target_dir / img_name)
+        buf = NamedTemporaryFile(suffix=".jpg")
+        page.save(buf.name, "JPEG", quality=95)
+        with open(buf.name, "rb") as fh:
+            default_storage.save(img_key, ContentFile(fh.read()))
+        image_paths.append(img_key)
+    # Update submission
+    submission = Submission.objects.get(id=submission_id)
+    existing = submission.original_image_paths or []
+    submission.original_image_paths = existing + image_paths
+    submission.save(update_fields=["original_image_paths"])
+    return {"count": len(image_paths), "paths": image_paths}
+
+
 HANDLERS = {
     "UPSCALE_SUBMISSION": handle_upscale,
     "GRADE_ITEM": lambda job: (grade_item_and_persist(SubmissionItem.objects.get(id=job.payload.get("submission_item_id"))) or {"graded": True}),
+    "PDF_CONVERT_EXAM": handle_pdf_convert_exam,
+    "PDF_CONVERT_SUBMISSION": handle_pdf_convert_submission,
 }
 
 
@@ -48,13 +116,79 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         run_once = options.get("once", False)
+        grading_workers = int(os.getenv("GRADING_WORKERS", "4"))
+        batch_size = int(os.getenv("JOB_BATCH_SIZE", "8"))
         while True:
-            job = (
-                Job.objects
-                .filter(status=Job.Status.PENDING)
-                .order_by("created_at")
-                .first()
-            )
+            # Fetch next job with resilience to transient DB errors
+            try:
+                # Try to claim a batch of grading jobs first
+                grading_ids = list(
+                    Job.objects.filter(status=Job.Status.PENDING, type="GRADE_ITEM").order_by("created_at").values_list("id", flat=True)[:batch_size]
+                )
+            except Exception:
+                # DB not ready / connection refused: backoff and retry
+                if run_once:
+                    raise
+                time.sleep(3)
+                continue
+            if grading_ids:
+                claimed = []
+                for jid in grading_ids:
+                    try:
+                        with locked_job(jid) as job:
+                            job.refresh_from_db()
+                            if job.status != Job.Status.PENDING:
+                                continue
+                            job.status = Job.Status.RUNNING
+                            job.started_at = timezone.now()
+                            job.save(update_fields=["status", "started_at"])
+                            claimed.append(job)
+                    except Exception:
+                        continue
+                if claimed:
+                    with ThreadPoolExecutor(max_workers=max(1, grading_workers)) as executor:
+                        futures = [executor.submit(HANDLERS[j.type], j) for j in claimed]
+                        for fut, j in zip(as_completed(futures), claimed):
+                            try:
+                                result = fut.result()
+                                j.refresh_from_db()
+                                j.status = Job.Status.SUCCEEDED
+                                j.result = result
+                                j.finished_at = timezone.now()
+                                j.save(update_fields=["status", "result", "finished_at"])
+                                try:
+                                    channel_layer = get_channel_layer()
+                                    async_to_sync(channel_layer.group_send)(
+                                        "notifications",
+                                        {"type": "notify", "payload": {"event": j.type, "job_id": j.id, "status": j.status, "result": j.result}},
+                                    )
+                                except Exception:
+                                    pass
+                            except Exception as e:
+                                j.refresh_from_db()
+                                j.status = Job.Status.FAILED
+                                j.error = str(e)
+                                j.retries += 1
+                                j.finished_at = timezone.now()
+                                j.save(update_fields=["status", "error", "retries", "finished_at"])
+                    if run_once:
+                        return
+                    time.sleep(0.1)
+                    continue
+
+            # Fallback: single oldest job of any type
+            try:
+                job = (
+                    Job.objects
+                    .filter(status=Job.Status.PENDING)
+                    .order_by("created_at")
+                    .first()
+                )
+            except Exception:
+                if run_once:
+                    raise
+                time.sleep(3)
+                continue
             if not job:
                 if run_once:
                     return
@@ -67,7 +201,7 @@ class Command(BaseCommand):
                     if job.status != Job.Status.PENDING:
                         continue
                     job.status = Job.Status.RUNNING
-                    job.started_at = datetime.utcnow()
+                    job.started_at = timezone.now()
                     job.save(update_fields=["status", "started_at"])
 
                 handler = HANDLERS.get(job.type)
@@ -78,7 +212,7 @@ class Command(BaseCommand):
                 job.refresh_from_db()
                 job.status = Job.Status.SUCCEEDED
                 job.result = result
-                job.finished_at = datetime.utcnow()
+                job.finished_at = timezone.now()
                 job.save(update_fields=["status", "result", "finished_at"])
                 # Emit websocket notification
                 try:
@@ -94,7 +228,7 @@ class Command(BaseCommand):
                 job.status = Job.Status.FAILED
                 job.error = str(e)
                 job.retries += 1
-                job.finished_at = datetime.utcnow()
+                job.finished_at = timezone.now()
                 job.save(update_fields=["status", "error", "retries", "finished_at"])
             finally:
                 if run_once:
